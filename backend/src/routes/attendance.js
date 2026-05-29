@@ -1,0 +1,308 @@
+const express = require("express");
+const { Parser } = require("json2csv");
+const pool = require("../db");
+const auth = require("../middleware/auth");
+const roleGuard = require("../middleware/roles");
+
+const router = express.Router();
+
+router.post("/check-in", auth, roleGuard("EMPLOYEE"), async (req, res) => {
+  try {
+    const { location } = req.body;
+    const employeeId = req.user.employee_id;
+    const now = new Date();
+    
+    // Using local date string to avoid timezone bugs
+    const dateStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+
+    const isLate = now.getHours() >= 9 && now.getMinutes() > 0;
+    const status = isLate ? 'LATE' : 'PRESENT';
+
+    const companyId = req.user.company_id;
+    const [compRows] = await pool.query("SELECT name FROM companies WHERE id = ?", [companyId]);
+    const companyName = compRows.length ? compRows[0].name : "Workspace";
+
+    const [rows] = await pool.query(
+      "SELECT * FROM attendance WHERE employee_id = ? AND att_date = ?",
+      [employeeId, dateStr]
+    );
+
+    let attId;
+    if (!rows.length) {
+      const [result] = await pool.query(
+        "INSERT INTO attendance (employee_id, att_date, check_in, status, check_in_location) VALUES (?, ?, ?, ?, ?)",
+        [employeeId, dateStr, now, status, location || 'Unknown']
+      );
+      attId = result.insertId;
+    } else {
+      attId = rows[0].id;
+    }
+
+    await pool.query(
+      "INSERT INTO punch_logs (employee_id, attendance_id, punch_time, punch_type, location) VALUES (?, ?, ?, 'IN', ?)",
+      [employeeId, attId, now, location || 'Unknown']
+    );
+
+    return res.json({ message: "Check-in successful", companyName });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+router.post("/check-out", auth, roleGuard("EMPLOYEE"), async (req, res) => {
+  try {
+    const { location } = req.body;
+    const employeeId = req.user.employee_id;
+    const now = new Date();
+    const dateStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+
+    const companyId = req.user.company_id;
+    const [compRows] = await pool.query("SELECT name FROM companies WHERE id = ?", [companyId]);
+    const companyName = compRows.length ? compRows[0].name : "Workspace";
+
+    const [rows] = await pool.query(
+      "SELECT * FROM attendance WHERE employee_id = ? AND att_date = ?",
+      [employeeId, dateStr]
+    );
+
+    if (!rows.length) {
+      return res.status(400).json({ message: "Check-in not found" });
+    }
+    const attId = rows[0].id;
+
+    await pool.query(
+      "INSERT INTO punch_logs (employee_id, attendance_id, punch_time, punch_type, location) VALUES (?, ?, ?, 'OUT', ?)",
+      [employeeId, attId, now, location || 'Unknown']
+    );
+
+    const [logs] = await pool.query(
+      "SELECT punch_time, punch_type FROM punch_logs WHERE attendance_id = ? ORDER BY punch_time ASC",
+      [attId]
+    );
+
+    let totalMinutes = 0;
+    let lastIn = null;
+    for (let log of logs) {
+      if (log.punch_type === 'IN') {
+        lastIn = new Date(log.punch_time);
+      } else if (log.punch_type === 'OUT' && lastIn) {
+        const outTime = new Date(log.punch_time);
+        totalMinutes += Math.floor((outTime - lastIn) / 60000);
+        lastIn = null;
+      }
+    }
+
+    const standardWorkHours = 9;
+    let overtimeMinutes = 0;
+    if (totalMinutes > standardWorkHours * 60) {
+      overtimeMinutes = totalMinutes - (standardWorkHours * 60);
+    }
+
+    await pool.query(
+      "UPDATE attendance SET check_out = ?, total_minutes = ?, overtime_minutes = ?, check_out_location = ? WHERE id = ?",
+      [now, totalMinutes, overtimeMinutes, location || 'Unknown', attId]
+    );
+
+    return res.json({ message: "Check-out successful", totalMinutes, companyName });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+// NEW: Get history for logged-in employee (Frappe style timeline)
+router.get("/history", auth, roleGuard("EMPLOYEE"), async (req, res) => {
+  try {
+    const employeeId = req.user.employee_id;
+    const [rows] = await pool.query(
+      `SELECT id, att_date, check_in, check_out, total_minutes, overtime_minutes, status, check_in_location, check_out_location 
+       FROM attendance 
+       WHERE employee_id = ? 
+       ORDER BY att_date DESC LIMIT 30`,
+      [employeeId]
+    );
+
+    if (rows.length > 0) {
+      const now = new Date();
+      const today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+      
+      const attDateObj = new Date(rows[0].att_date);
+      const attDateStr = attDateObj.getFullYear() + '-' + String(attDateObj.getMonth() + 1).padStart(2, '0') + '-' + String(attDateObj.getDate()).padStart(2, '0');
+
+      if (attDateStr === today) {
+        const [logs] = await pool.query(
+          "SELECT punch_type FROM punch_logs WHERE attendance_id = ? ORDER BY punch_time DESC LIMIT 1",
+          [rows[0].id]
+        );
+        rows[0].is_punched_in = logs.length > 0 && logs[0].punch_type === 'IN';
+      }
+    }
+
+    return res.json(rows);
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+// NEW: Get analytics for the admin dashboard
+router.get("/stats/today", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), async (req, res) => {
+  try {
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const companyId = req.user.company_id;
+
+    const [[{ total }]] = await pool.query("SELECT COUNT(*) as total FROM employees WHERE company_id = ? AND status = 'ACTIVE'", [companyId]);
+    const [[{ present }]] = await pool.query(`
+      SELECT COUNT(*) as present FROM attendance a
+      JOIN employees e ON a.employee_id = e.id
+      WHERE a.att_date = ? AND a.status IN ('PRESENT', 'LATE') AND e.company_id = ?
+    `, [dateStr, companyId]);
+    const [[{ late }]] = await pool.query(`
+      SELECT COUNT(*) as late FROM attendance a
+      JOIN employees e ON a.employee_id = e.id
+      WHERE a.att_date = ? AND a.status = 'LATE' AND e.company_id = ?
+    `, [dateStr, companyId]);
+    
+    // Fetch Company and Admin Details
+    const [compRows] = await pool.query("SELECT name, company_code FROM companies WHERE id = ?", [companyId]);
+    const companyName = compRows.length ? compRows[0].name : "Workspace";
+    const companyCode = compRows.length ? compRows[0].company_code : "";
+
+    const [userRows] = await pool.query("SELECT username FROM users WHERE id = ?", [req.user.id]);
+    const adminName = userRows.length ? userRows[0].username : "Admin";
+
+    const stats = { total, present, late, absent: Math.max(0, total - present), companyName, companyCode, adminName };
+    return res.json(stats);
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+router.get("/today", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), async (req, res) => {
+  try {
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const [rows] = await pool.query(
+      `SELECT a.*, e.emp_code, e.name
+       FROM attendance a
+       JOIN employees e ON e.id = a.employee_id
+       WHERE a.att_date = ? AND e.company_id = ?
+       ORDER BY a.check_in DESC`,
+      [dateStr, req.user.company_id]
+    );
+    
+    for (let r of rows) {
+      const [logs] = await pool.query("SELECT punch_time, punch_type FROM punch_logs WHERE attendance_id = ? ORDER BY punch_time ASC", [r.id]);
+      r.punches = logs;
+    }
+
+    return res.json(rows);
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+router.get("/report/monthly", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), async (req, res) => {
+  try {
+    const { month } = req.query;
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ message: "month is required in YYYY-MM format" });
+    }
+
+    const startDate = `${month}-01`;
+    const [endRows] = await pool.query("SELECT LAST_DAY(?) AS last_day", [startDate]);
+    const endDate = endRows[0].last_day;
+
+    const [rows] = await pool.query(
+      `SELECT e.emp_code, e.name, a.att_date, a.check_in, a.check_out, a.total_minutes, a.status, a.check_in_location, a.check_out_location
+       FROM attendance a
+       JOIN employees e ON e.id = a.employee_id
+       WHERE a.att_date BETWEEN ? AND ? AND e.company_id = ?
+       ORDER BY e.emp_code, a.att_date`,
+      [startDate, endDate, req.user.company_id]
+    );
+
+    const parser = new Parser({
+      fields: ["emp_code", "name", "att_date", "check_in", "check_out", "total_minutes", "overtime_minutes", "status", "check_in_location", "check_out_location"]
+    });
+
+    res.header("Content-Type", "text/csv");
+    res.attachment(`attendance_report_${month}.csv`);
+    return res.send(parser.parse(rows));
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+// NEW: Generate Fake Data for Testing
+router.post("/generate-fake-data", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), async (req, res) => {
+  try {
+    const companyId = req.user.company_id;
+    
+    // Get all employees for this company
+    const [emps] = await pool.query("SELECT id FROM employees WHERE company_id = ?", [companyId]);
+    if (emps.length === 0) {
+      return res.status(400).json({ message: "Please onboard at least 1 employee first!" });
+    }
+
+    // Get existing dates to prevent duplicate crashes
+    const [existingRows] = await pool.query("SELECT employee_id, att_date FROM attendance");
+    const existingMap = new Set(existingRows.map(r => {
+      const d = new Date(r.att_date);
+      return `${r.employee_id}_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }));
+
+    const values = [];
+
+    // Generate realistic attendance for the last 15 days
+    for (const emp of emps) {
+      for (let d = 0; d < 15; d++) {
+        const date = new Date();
+        date.setDate(date.getDate() - d);
+        // Local Date string to prevent timezone offset bugs
+        const dateStr = date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, '0') + "-" + String(date.getDate()).padStart(2, '0');
+
+        if (existingMap.has(`${emp.id}_${dateStr}`)) continue;
+
+        // Randomize attendance (10% Absent, 20% Late, 70% Present)
+        const rand = Math.random();
+        if (rand < 0.1) continue; // Absent
+
+        const isLate = rand < 0.3; 
+        const checkIn = new Date(date);
+        checkIn.setHours(isLate ? 9 : 8, isLate ? 15 + Math.floor(Math.random() * 40) : Math.floor(Math.random() * 59), 0);
+
+        const checkOut = new Date(date);
+        // Check-out between 5:00 PM and 6:59 PM (testing strict 9-to-5)
+        checkOut.setHours(17 + Math.floor(Math.random() * 2), Math.floor(Math.random() * 59), 0);
+
+        values.push([emp.id, dateStr, checkIn, checkOut, Math.floor((checkOut - checkIn) / 60000), isLate ? 'LATE' : 'PRESENT', "Tech Park, Mumbai", "Tech Park, Mumbai"]);
+      }
+    }
+    
+    if (values.length > 0) {
+      await pool.query("INSERT INTO attendance (employee_id, att_date, check_in, check_out, total_minutes, status, check_in_location, check_out_location) VALUES ?", [values]);
+    }
+    res.json({ message: `${values.length} fake 9-to-5 attendance records generated successfully!` });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// NEW: Get online team members for mobile app
+router.get("/online-team", auth, roleGuard("EMPLOYEE"), async (req, res) => {
+  try {
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const [rows] = await pool.query(
+      `SELECT e.id, e.name, e.designation as role 
+       FROM attendance a
+       JOIN employees e ON a.employee_id = e.id
+       WHERE a.att_date = ? AND e.company_id = ? AND e.id != ? AND a.status IN ('PRESENT', 'LATE')
+       ORDER BY a.check_in DESC LIMIT 10`,
+      [dateStr, req.user.company_id, req.user.employee_id]
+    );
+    return res.json(rows);
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+module.exports = router;
