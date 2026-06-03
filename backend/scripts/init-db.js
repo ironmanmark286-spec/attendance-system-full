@@ -7,10 +7,18 @@ async function main() {
   const sqlPath = path.join(__dirname, "..", "src", "sql", "init.sql");
   const sql = fs.readFileSync(sqlPath, "utf8");
 
+  const dbHost = process.env.MYSQLHOST || process.env.DB_HOST;
+  const dbUser = process.env.MYSQLUSER || process.env.DB_USER;
+  const dbPass = process.env.MYSQLPASSWORD || process.env.DB_PASS;
+  const dbName = process.env.MYSQLDATABASE || process.env.DB_NAME;
+  const dbPort = process.env.MYSQLPORT || process.env.DB_PORT || 3306;
+
   const connection = await mysql.createConnection({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASS,
+    host: dbHost,
+    user: dbUser,
+    password: dbPass,
+    database: dbName,
+    port: dbPort,
     multipleStatements: true
   });
 
