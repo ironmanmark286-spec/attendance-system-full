@@ -28,7 +28,8 @@ router.get("/me", auth, async (req, res) => {
       created_at: e.created_at
     });
   } catch (err) {
-    res.status(500).json({ message: "Server error" });
+    console.error("Error fetching employee profile:", err);
+    res.status(500).json({ message: "Failed to fetch profile" });
   }
 });
 
@@ -36,12 +37,13 @@ router.get("/me", auth, async (req, res) => {
 router.get("/", auth, roles("ADMIN"), async (req, res) => {
   try {
     const [rows] = await pool.query(
-      "SELECT id, emp_code, name, status, designation, plain_password, created_at FROM employees WHERE company_id = ? ORDER BY created_at DESC",
+      "SELECT id, emp_code, name, status, designation, created_at FROM employees WHERE company_id = ? ORDER BY created_at DESC",
       [req.user.company_id]
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ message: "Server error" });
+    console.error("Error fetching employees:", err);
+    res.status(500).json({ message: "Failed to fetch employees" });
   }
 });
 
@@ -51,6 +53,10 @@ router.post("/", auth, roles("ADMIN"), async (req, res) => {
     const { empCode, name, password, designation } = req.body;
     if (!empCode || !name || !password) {
       return res.status(400).json({ message: "All fields are required" });
+    }
+    
+    if (password.length < 6) {
+      return res.status(400).json({ message: "Password must be at least 6 characters" });
     }
 
     const [existing] = await pool.query(
@@ -63,13 +69,14 @@ router.post("/", auth, roles("ADMIN"), async (req, res) => {
 
     const hash = await bcrypt.hash(password, 10);
     await pool.query(
-      "INSERT INTO employees (company_id, emp_code, name, designation, password_hash, plain_password) VALUES (?, ?, ?, ?, ?, ?)",
-      [req.user.company_id, empCode, name, designation || 'Employee', hash, password]
+      "INSERT INTO employees (company_id, emp_code, name, designation, password_hash) VALUES (?, ?, ?, ?, ?)",
+      [req.user.company_id, empCode, name, designation || 'Employee', hash]
     );
 
-    res.status(201).json({ message: "Employee added successfully", empCode, name, designation: designation || 'Employee', password });
+    res.status(201).json({ message: "Employee added successfully", empCode, name, designation: designation || 'Employee' });
   } catch (err) {
-    res.status(500).json({ message: "Server error" });
+    console.error("Error adding employee:", err);
+    res.status(500).json({ message: "Failed to add employee" });
   }
 });
 
@@ -82,10 +89,10 @@ router.post("/generate-bulk", auth, roles("ADMIN"), async (req, res) => {
     const values = [];
     for (let i = 1; i <= 100; i++) {
       const code = `TEST-${Math.floor(Math.random() * 10000)}-${i}`;
-      values.push([companyId, code, `Test Employee ${i}`, 'Quality Tester', hash, bulkPass]);
+      values.push([companyId, code, `Test Employee ${i}`, 'Quality Tester', hash]);
     }
     await pool.query(
-      "INSERT IGNORE INTO employees (company_id, emp_code, name, designation, password_hash, plain_password) VALUES ?",
+      "INSERT IGNORE INTO employees (company_id, emp_code, name, designation, password_hash) VALUES ?",
       [values]
     );
     res.json({ message: "100 Fake employees generated successfully!" });
@@ -102,13 +109,20 @@ router.put("/:id/status", auth, roles("ADMIN"), async (req, res) => {
     if (status !== 'ACTIVE' && status !== 'INACTIVE') {
       return res.status(400).json({ message: "Invalid status" });
     }
-    await pool.query(
+    
+    const [result] = await pool.query(
       "UPDATE employees SET status = ? WHERE id = ? AND company_id = ?",
       [status, req.params.id, req.user.company_id]
     );
+    
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "Employee not found" });
+    }
+    
     res.json({ message: `Employee status updated to ${status}` });
   } catch (err) {
-    res.status(500).json({ message: "Server error" });
+    console.error("Error updating employee status:", err);
+    res.status(500).json({ message: "Failed to update employee status" });
   }
 });
 
@@ -125,9 +139,14 @@ router.delete("/:id", auth, roles("ADMIN"), async (req, res) => {
       req.user.company_id
     ]);
     
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "Employee not found" });
+    }
+    
     res.json({ message: "Employee and their attendance records deleted successfully" });
   } catch (err) {
-    res.status(500).json({ message: "Server error during deletion" });
+    console.error("Error deleting employee:", err);
+    res.status(500).json({ message: "Failed to delete employee" });
   }
 });
 
@@ -137,14 +156,19 @@ router.put("/:id/reset-password", auth, roles("ADMIN"), async (req, res) => {
     const newPassword = Math.random().toString(36).slice(-8); // Generate random 8 char password
     const hash = await bcrypt.hash(newPassword, 10);
     
-    await pool.query(
+    const [result] = await pool.query(
       "UPDATE employees SET password_hash = ? WHERE id = ? AND company_id = ?",
       [hash, req.params.id, req.user.company_id]
     );
     
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "Employee not found" });
+    }
+    
     res.json({ message: "Password reset successful", newPassword });
   } catch (err) {
-    res.status(500).json({ message: "Server error" });
+    console.error("Error resetting password:", err);
+    res.status(500).json({ message: "Failed to reset password" });
   }
 });
 

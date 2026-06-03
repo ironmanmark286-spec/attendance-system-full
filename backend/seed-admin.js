@@ -16,7 +16,7 @@ const ADMIN_PASS = "Admin@123";
     const hash = await bcrypt.hash(ADMIN_PASS, 10);
 
     await pool.query(
-      "INSERT IGNORE INTO companies (id, company_code, name) VALUES (1, ?, ?)",
+      "INSERT IGNORE INTO companies (company_code, name) VALUES (?, ?)",
       [COMPANY_CODE, COMPANY_NAME]
     );
 

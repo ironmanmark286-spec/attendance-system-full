@@ -13,14 +13,22 @@ async function main() {
   const dbName = process.env.MYSQLDATABASE || process.env.DB_NAME;
   const dbPort = process.env.MYSQLPORT || process.env.DB_PORT || 3306;
 
-  const connection = await mysql.createConnection({
+  const dbConfig = {
     host: dbHost,
     user: dbUser,
     password: dbPass,
     database: dbName,
     port: dbPort,
     multipleStatements: true
-  });
+  };
+
+  if (dbHost && dbHost.includes("aivencloud.com")) {
+    dbConfig.ssl = {
+      rejectUnauthorized: false
+    };
+  }
+
+  const connection = await mysql.createConnection(dbConfig);
 
   await connection.query(sql);
   await connection.end();

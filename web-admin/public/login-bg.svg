@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="g1" x1="0" x2="1">
+      <stop offset="0%" stop-color="#f5f3ff" />
+      <stop offset="100%" stop-color="#eef2ff" />
+    </linearGradient>
+    <linearGradient id="g2" x1="0" x2="1">
+      <stop offset="0%" stop-color="#a78bfa" stop-opacity="0.15" />
+      <stop offset="100%" stop-color="#60a5fa" stop-opacity="0.08" />
+    </linearGradient>
+  </defs>
+
+  <!-- soft background -->
+  <rect width="1600" height="900" fill="url(#g1)" />
+
+  <!-- abstract blobs -->
+  <g transform="translate(1200,160)">
+    <ellipse cx="0" cy="0" rx="260" ry="160" fill="url(#g2)" />
+  </g>
+  <g transform="translate(220,700)">
+    <ellipse cx="0" cy="0" rx="320" ry="200" fill="#fbcfe8" opacity="0.06" />
+  </g>
+
+  <!-- simple office scene: desk + lamp + laptop (minimal, scalable) -->
+  <g transform="translate(300,300) scale(1.2)">
+    <!-- desk shadow -->
+    <ellipse cx="360" cy="280" rx="240" ry="30" fill="#000" opacity="0.06" />
+    <!-- desk surface -->
+    <rect x="140" y="200" width="440" height="14" rx="6" fill="#e6eefc" />
+    <rect x="120" y="214" width="480" height="120" rx="12" fill="#fff" stroke="#e6eefc" />
+
+    <!-- laptop -->
+    <rect x="280" y="230" width="160" height="90" rx="8" fill="#0ea5e9" />
+    <rect x="290" y="240" width="140" height="60" rx="6" fill="#fff" opacity="0.06" />
+    <rect x="310" y="255" width="100" height="28" rx="4" fill="#fff" opacity="0.08" />
+
+    <!-- coffee cup -->
+    <rect x="220" y="250" width="28" height="34" rx="6" fill="#fff" stroke="#f1f5f9" />
+    <circle cx="234" cy="248" r="8" fill="#f59e0b" />
+
+    <!-- plant -->
+    <rect x="520" y="220" width="14" height="70" rx="4" fill="#34d399" />
+    <circle cx="527" cy="204" r="20" fill="#86efac" />
+  </g>
+
+  <!-- friendly characters (very simple) -->
+  <g transform="translate(920,420) scale(0.9)">
+    <circle cx="40" cy="40" r="28" fill="#fff" stroke="#f0f9ff" />
+    <rect x="10" y="76" width="60" height="40" rx="8" fill="#fff" stroke="#f0f9ff" />
+  </g>
+
+  <!-- top-right decorative grid -->
+  <g transform="translate(1280,40)" fill="#c7d2fe" opacity="0.08">
+    <rect x="0" y="0" width="18" height="18" rx="4" />
+    <rect x="28" y="0" width="18" height="18" rx="4" />
+    <rect x="56" y="0" width="18" height="18" rx="4" />
+    <rect x="0" y="28" width="18" height="18" rx="4" />
+  </g>
+</svg>

@@ -1,0 +1,182 @@
+/* Comprehensive UI Animations */
+
+/* 1. Entrances */
+.fade-in {
+  animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.fade-in-up {
+  opacity: 0;
+  transform: translateY(20px);
+  animation: fadeInUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.fade-in-down {
+  opacity: 0;
+  transform: translateY(-20px);
+  animation: fadeInDown 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.slide-in-right {
+  opacity: 0;
+  transform: translateX(30px);
+  animation: slideInRight 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.slide-in-left {
+  opacity: 0;
+  transform: translateX(-30px);
+  animation: slideInLeft 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.zoom-in {
+  opacity: 0;
+  transform: scale(0.95);
+  animation: zoomIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.bounce-in {
+  opacity: 0;
+  transform: scale(0.8);
+  animation: bounceIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* 2. Staggered Delays for lists/cards */
+.stagger-1 { animation-delay: 0.1s; }
+.stagger-2 { animation-delay: 0.2s; }
+.stagger-3 { animation-delay: 0.3s; }
+.stagger-4 { animation-delay: 0.4s; }
+.stagger-5 { animation-delay: 0.5s; }
+.stagger-6 { animation-delay: 0.6s; }
+.stagger-7 { animation-delay: 0.7s; }
+
+/* 3. Continuous/Ambient */
+.float-blob {
+  animation: float 8s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.pulse {
+  animation: pulse 2.5s ease-in-out infinite;
+}
+
+.pulse-fast {
+  animation: pulseFast 1.5s ease-in-out infinite;
+}
+
+.spin-slow {
+  animation: spin 12s linear infinite;
+}
+
+.glow-breathe {
+  animation: glowBreathe 3s ease-in-out infinite alternate;
+}
+
+/* 4. Hover Effects (interactive elements) */
+.hover-lift {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.hover-lift:hover {
+  transform: translateY(-4px) scale(1.01);
+  box-shadow: 0 12px 30px -10px var(--primary-light, rgba(99, 102, 241, 0.4));
+  z-index: 10;
+}
+
+.hover-grow {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.hover-grow:hover {
+  transform: scale(1.05);
+}
+
+.hover-glow:hover {
+  filter: drop-shadow(0 0 10px var(--primary));
+}
+
+/* 5. Keyframes */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translateY(-20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(30px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-30px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes zoomIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes bounceIn {
+  0% { opacity: 0; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.05); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes float {
+  0% { transform: translateY(0) translateX(0); }
+  25% { transform: translateY(-8px) translateX(4px); }
+  50% { transform: translateY(0) translateX(0); }
+  75% { transform: translateY(6px) translateX(-4px); }
+  100% { transform: translateY(0) translateX(0); }
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.02); opacity: 0.9; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes pulseFast {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.05); opacity: 0.8; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes glowBreathe {
+  from { box-shadow: 0 0 10px -5px var(--primary); }
+  to { box-shadow: 0 0 25px 5px var(--primary); }
+}
+
+/* 6. Utility for stats */
+.animated-stat { 
+  font-weight: 900; 
+  font-size: 28px; 
+  color: var(--text-main); 
+  transition: all 0.2s ease; 
+}
+.sparkle { 
+  position: absolute; 
+  width: 10px; 
+  height: 10px; 
+  border-radius: 50%; 
+  background: rgba(255,255,255,0.6); 
+  filter: blur(6px); 
+}
+
+/* Ensure body transitions smoothly for theme toggles */
+body {
+  transition: background-color 0.5s ease, color 0.5s ease;
+}

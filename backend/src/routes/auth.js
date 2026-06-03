@@ -115,7 +115,7 @@ router.post("/reset-password", async (req, res) => {
     if (!rows.length) return res.status(401).json({ message: "User not found" });
 
     const hash = await bcrypt.hash(newPassword, 10);
-    await pool.query("UPDATE employees SET password_hash = ?, plain_password = ? WHERE id = ?", [hash, newPassword, rows[0].id]);
+    await pool.query("UPDATE employees SET password_hash = ? WHERE id = ?", [hash, rows[0].id]);
     
     return res.json({ message: "Employee password reset successfully." });
   } catch (err) {

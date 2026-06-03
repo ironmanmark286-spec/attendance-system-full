@@ -12,7 +12,7 @@ const password =
     ? configuredPassword
     : "";
 
-const pool = mysql.createPool({
+const dbConfig = {
   host: dbHost,
   user: dbUser,
   password,
@@ -20,6 +20,15 @@ const pool = mysql.createPool({
   port: dbPort,
   waitForConnections: true,
   connectionLimit: 10
-});
+};
+
+// Add SSL for providers like Aiven that require it
+if (dbHost && dbHost.includes("aivencloud.com")) {
+  dbConfig.ssl = {
+    rejectUnauthorized: false // Required for Aiven if custom CA is not provided
+  };
+}
+
+const pool = mysql.createPool(dbConfig);
 
 module.exports = pool;

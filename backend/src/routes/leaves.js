@@ -9,7 +9,7 @@ const router = express.Router();
 router.get("/", auth, roleGuard("ADMIN", "HR"), async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT l.*, e.name, e.emp_code, e.department
+      SELECT l.*, e.name, e.emp_code, e.designation
       FROM leaves l
       JOIN employees e ON l.employee_id = e.id
       WHERE e.company_id = ?

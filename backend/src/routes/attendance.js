@@ -15,7 +15,7 @@ router.post("/check-in", auth, roleGuard("EMPLOYEE"), async (req, res) => {
     // Using local date string to avoid timezone bugs
     const dateStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
 
-    const isLate = now.getHours() >= 9 && now.getMinutes() > 0;
+    const isLate = now.getHours() > 9 || (now.getHours() === 9 && now.getMinutes() > 0);
     const status = isLate ? 'LATE' : 'PRESENT';
 
     const companyId = req.user.company_id;
@@ -45,7 +45,8 @@ router.post("/check-in", auth, roleGuard("EMPLOYEE"), async (req, res) => {
 
     return res.json({ message: "Check-in successful", companyName });
   } catch (err) {
-    return res.status(500).json({ message: err.message });
+    console.error("Check-in error:", err);
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -92,10 +93,24 @@ router.post("/check-out", auth, roleGuard("EMPLOYEE"), async (req, res) => {
       }
     }
 
-    const standardWorkHours = 9;
+    let standardWorkHours = 9;
+    let otApplicableFrom = 540;
+    let maxDailyOT = 180;
+
+    const [otRows] = await pool.query("SELECT standard_hours, ot_applicable_from_minutes, max_daily_ot_minutes FROM ot_settings WHERE company_id = ?", [companyId]);
+    if (otRows.length > 0) {
+      standardWorkHours = Number(otRows[0].standard_hours) || 9;
+      otApplicableFrom = Number(otRows[0].ot_applicable_from_minutes) || 540;
+      maxDailyOT = Number(otRows[0].max_daily_ot_minutes) || 180;
+    }
+
     let overtimeMinutes = 0;
-    if (totalMinutes > standardWorkHours * 60) {
-      overtimeMinutes = totalMinutes - (standardWorkHours * 60);
+    if (totalMinutes >= otApplicableFrom) {
+      overtimeMinutes = totalMinutes - Math.floor(standardWorkHours * 60);
+      if (maxDailyOT > 0 && overtimeMinutes > maxDailyOT) {
+        overtimeMinutes = maxDailyOT;
+      }
+      if (overtimeMinutes < 0) overtimeMinutes = 0;
     }
 
     await pool.query(
@@ -105,7 +120,8 @@ router.post("/check-out", auth, roleGuard("EMPLOYEE"), async (req, res) => {
 
     return res.json({ message: "Check-out successful", totalMinutes, companyName });
   } catch (err) {
-    return res.status(500).json({ message: err.message });
+    console.error("Check-out error:", err);
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -139,7 +155,8 @@ router.get("/history", auth, roleGuard("EMPLOYEE"), async (req, res) => {
 
     return res.json(rows);
   } catch (err) {
-    return res.status(500).json({ message: err.message });
+    console.error("History error:", err);
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -172,7 +189,8 @@ router.get("/stats/today", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), async (
     const stats = { total, present, late, absent: Math.max(0, total - present), companyName, companyCode, adminName };
     return res.json(stats);
   } catch (err) {
-    return res.status(500).json({ message: err.message });
+    console.error("Stats today error:", err);
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -195,7 +213,8 @@ router.get("/today", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), async (req, r
 
     return res.json(rows);
   } catch (err) {
-    return res.status(500).json({ message: err.message });
+    console.error("Today attendance error:", err);
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -211,7 +230,7 @@ router.get("/report/monthly", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), asyn
     const endDate = endRows[0].last_day;
 
     const [rows] = await pool.query(
-      `SELECT e.emp_code, e.name, a.att_date, a.check_in, a.check_out, a.total_minutes, a.status, a.check_in_location, a.check_out_location
+      `SELECT e.emp_code, e.name, a.att_date, a.check_in, a.check_out, a.total_minutes, a.overtime_minutes, a.status, a.check_in_location, a.check_out_location
        FROM attendance a
        JOIN employees e ON e.id = a.employee_id
        WHERE a.att_date BETWEEN ? AND ? AND e.company_id = ?
@@ -227,7 +246,8 @@ router.get("/report/monthly", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), asyn
     res.attachment(`attendance_report_${month}.csv`);
     return res.send(parser.parse(rows));
   } catch (err) {
-    return res.status(500).json({ message: err.message });
+    console.error("Monthly report error:", err);
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -282,8 +302,8 @@ router.post("/generate-fake-data", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"),
     }
     res.json({ message: `${values.length} fake 9-to-5 attendance records generated successfully!` });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: err.message });
+    console.error("Generate fake data error:", err);
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -301,7 +321,8 @@ router.get("/online-team", auth, roleGuard("EMPLOYEE"), async (req, res) => {
     );
     return res.json(rows);
   } catch (err) {
-    return res.status(500).json({ message: err.message });
+    console.error("Online team error:", err);
+    return res.status(500).json({ message: "Server error" });
   }
 });
 

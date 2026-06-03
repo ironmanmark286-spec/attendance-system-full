@@ -7,8 +7,14 @@ import * as Location from "expo-location";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, FontAwesome5 } from "@expo/vector-icons";
 
+// --- SMART API URL CONFIGURATION ---
+// Auto-selects based on platform emulator. If testing on a physical phone via Expo Go,
+// replace this with your laptop's Wi-Fi IP address (e.g., "http://192.168.1.100:5000").
+const API_URL = Platform.OS === 'android' ? "http://10.0.2.2:5000" : "http://localhost:5000";
+
 const api = axios.create({
-  baseURL: "http://10.103.180.170:5000" // Updated to local PC IP for physical devices
+  baseURL: API_URL,
+  timeout: 10000 // 10 seconds timeout to prevent hanging
 });
 
 const { width, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -87,6 +93,15 @@ function AppContent() {
     { id: 'TKT-089', title: 'Salary Slip Request', status: 'RESOLVED', date: 'Oct 10, 2024', priority: 'Low' }
   ]);
   
+  const [otSettings, setOtSettings] = useState({
+    standard_hours: 9.0,
+    ot_rate_multiplier: 1.5,
+    ot_applicable_from_minutes: 540,
+    max_daily_ot_minutes: 180,
+    weekly_off_days: "Saturday,Sunday",
+    ot_payment_condition: "Above standard hours"
+  });
+  
   const [leaveModalVisible, setLeaveModalVisible] = useState(false);
   const [leaveForm, setLeaveForm] = useState({ start_date: '', end_date: '', leave_type: 'Annual Leave', reason: '' });
   const [isApplyingLeave, setIsApplyingLeave] = useState(false);
@@ -94,20 +109,27 @@ function AppContent() {
   
   const fade = useRef(new Animated.Value(1)).current;
 
+  const handleLogout = useCallback(async () => {
+    await AsyncStorage.removeItem("token");
+    setToken("");
+    setProfile({ name: "", emp_code: "", department: "", designation: "" });
+  }, []);
+
   const loadData = useCallback(async (currentToken) => {
     if (!currentToken) return;
     try {
       const headers = { Authorization: `Bearer ${currentToken}` };
-      const [profRes, histRes, leaveRes, payslipRes, teamRes] = await Promise.all([
+      const [profRes, histRes, leaveRes, payslipRes, teamRes, otRes] = await Promise.all([
         api.get("/employees/me", { headers }),
         api.get("/attendance/history", { headers }),
         api.get("/leaves/me", { headers }).catch(() => ({ data: [] })),
         api.get("/payslips/me", { headers }).catch(() => ({ data: [] })),
-        api.get("/attendance/online-team", { headers }).catch(() => ({ data: [] }))
+        api.get("/attendance/online-team", { headers }).catch(() => ({ data: [] })),
+        api.get("/ot-settings", { headers }).catch(() => ({ data: {} }))
       ]);
 
-      setProfile(profRes.data);
-      await AsyncStorage.setItem("empName", profRes.data.name);
+      setProfile(profRes.data || {});
+      await AsyncStorage.setItem("empName", profRes.data?.name || "");
       if (Array.isArray(histRes.data)) {
         setHistory(histRes.data);
         if (histRes.data.length > 0 && histRes.data[0].check_in) {
@@ -138,11 +160,20 @@ function AppContent() {
         }
       }
 
-      setMyLeaves(leaveRes.data || []);
-      setPayslips(payslipRes.data || []);
-      setOnlineTeam(teamRes.data || []);
-    } catch (e) { console.log("Error loading data:", e); }
-  }, []);
+      setMyLeaves(Array.isArray(leaveRes.data) ? leaveRes.data : []);
+      setPayslips(Array.isArray(payslipRes.data) ? payslipRes.data : []);
+      setOnlineTeam(Array.isArray(teamRes.data) ? teamRes.data : []);
+      if (otRes.data && Object.keys(otRes.data).length > 0) {
+        setOtSettings(otRes.data);
+      }
+    } catch (e) { 
+      console.log("Error loading data:", e); 
+      if (e?.response?.status === 401 || e?.response?.status === 403) {
+        Alert.alert("Session Expired", "Your session has expired. Please log in again.");
+        handleLogout();
+      }
+    }
+  }, [handleLogout]);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
@@ -191,12 +222,6 @@ function AppContent() {
     }
   };
 
-  const logout = async () => {
-    await AsyncStorage.removeItem("token");
-    setToken("");
-    setProfile({ name: "", emp_code: "", department: "", designation: "" });
-  };
-
   const toggleTheme = async () => {
     const nextTheme = theme === "dark" ? "light" : "dark";
     setTheme(nextTheme);
@@ -243,8 +268,13 @@ function AppContent() {
     try {
       const { data } = await api.post(endpoint, { location: address }, { headers: { Authorization: `Bearer ${token}` } });
       const nowStr = format12Hour(new Date());
-      if (type === 'In') setCheckInTime(nowStr);
-      else setCheckOutTime(nowStr);
+      if (type === 'In') {
+        setCheckInTime(nowStr);
+        setIsPunchedIn(true);
+      } else {
+        setCheckOutTime(nowStr);
+        setIsPunchedIn(false);
+      }
       await loadData(token); // Ensure full reload state updates button instantly
       Alert.alert("Success", type === 'In' ? `Checked in instantly at ${data.companyName || 'Workspace'}.` : `Checked out successfully. Total: ${data.totalMinutes || 0} mins`);
     } catch (e) {
@@ -525,7 +555,7 @@ function AppContent() {
                   <View style={{ flex: 1, marginLeft: 20 }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
                       <Text style={{ color: palette.textPrimary, fontWeight: '800', fontSize: 16 }}>{new Date(item.att_date).toLocaleDateString('en-US', { weekday: 'long' })}</Text>
-                      <View style={{ backgroundColor: item.status === 'LATE' ? 'rgba(245,158,11,0.1)' : 'rgba(16,185,129,0.1)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
+                    <View style={{ backgroundColor: item.status === 'LATE' ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
                         <Text style={{ color: item.status === 'LATE' ? palette.warning : palette.success, fontWeight: '800', fontSize: 11 }}>{item.status}</Text>
                       </View>
                     </View>
@@ -617,6 +647,121 @@ function AppContent() {
               )}
             </ScrollView>
           )}
+
+          {/* TAB: OT INFO */}
+          {activeTab === 'OT Info' && (
+            <ScrollView contentContainerStyle={{ padding: 24 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[palette.primary]} tintColor={palette.primary} />}>
+              <Header title="Overtime Settings" />
+              
+              {/* Standard Work Hours Card */}
+              <View style={[styles.leaveCard, { backgroundColor: palette.bgCard, borderColor: palette.border, shadowColor: palette.shadow, marginBottom: 16 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                  <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(99, 102, 241, 0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                    <Ionicons name="time" size={22} color={palette.primary} />
+                  </View>
+                  <View>
+                    <Text style={{ color: palette.textPrimary, fontSize: 16, fontWeight: '800' }}>Standard Work Hours</Text>
+                    <Text style={{ color: palette.textSecondary, fontSize: 12, marginTop: 2 }}>Daily shift duration</Text>
+                  </View>
+                </View>
+                <View style={{ backgroundColor: palette.bgInput, padding: 12, borderRadius: 12, borderLeftWidth: 3, borderLeftColor: palette.primary }}>
+                  <Text style={{ color: palette.textPrimary, fontSize: 24, fontWeight: '900' }}>{otSettings.standard_hours}</Text>
+                  <Text style={{ color: palette.textSecondary, fontSize: 12, marginTop: 4 }}>hours per day</Text>
+                </View>
+              </View>
+
+              {/* OT Rate Multiplier Card */}
+              <View style={[styles.leaveCard, { backgroundColor: palette.bgCard, borderColor: palette.border, shadowColor: palette.shadow, marginBottom: 16 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                  <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(16, 185, 129, 0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                    <Ionicons name="trending-up" size={22} color={palette.success} />
+                  </View>
+                  <View>
+                    <Text style={{ color: palette.textPrimary, fontSize: 16, fontWeight: '800' }}>OT Rate Multiplier</Text>
+                    <Text style={{ color: palette.textSecondary, fontSize: 12, marginTop: 2 }}>Additional payment rate</Text>
+                  </View>
+                </View>
+                <View style={{ backgroundColor: palette.bgInput, padding: 12, borderRadius: 12, borderLeftWidth: 3, borderLeftColor: palette.success }}>
+                  <Text style={{ color: palette.textPrimary, fontSize: 24, fontWeight: '900' }}>{otSettings.ot_rate_multiplier}x</Text>
+                  <Text style={{ color: palette.textSecondary, fontSize: 12, marginTop: 4 }}>of regular hourly rate</Text>
+                </View>
+              </View>
+
+              {/* OT Applicable From Card */}
+              <View style={[styles.leaveCard, { backgroundColor: palette.bgCard, borderColor: palette.border, shadowColor: palette.shadow, marginBottom: 16 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                  <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(245, 158, 11, 0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                    <Ionicons name="flash" size={22} color="#f59e0b" />
+                  </View>
+                  <View>
+                    <Text style={{ color: palette.textPrimary, fontSize: 16, fontWeight: '800' }}>OT Kicks In After</Text>
+                    <Text style={{ color: palette.textSecondary, fontSize: 12, marginTop: 2 }}>Threshold for overtime</Text>
+                  </View>
+                </View>
+                <View style={{ backgroundColor: palette.bgInput, padding: 12, borderRadius: 12, borderLeftWidth: 3, borderLeftColor: '#f59e0b' }}>
+                  <Text style={{ color: palette.textPrimary, fontSize: 24, fontWeight: '900' }}>
+                    {Math.floor(otSettings.ot_applicable_from_minutes / 60)}h {otSettings.ot_applicable_from_minutes % 60}m
+                  </Text>
+                  <Text style={{ color: palette.textSecondary, fontSize: 12, marginTop: 4 }}>per day</Text>
+                </View>
+              </View>
+
+              {/* Max Daily OT Card */}
+              <View style={[styles.leaveCard, { backgroundColor: palette.bgCard, borderColor: palette.border, shadowColor: palette.shadow, marginBottom: 16 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                  <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(239, 68, 68, 0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                    <Ionicons name="alert-circle" size={22} color={palette.danger} />
+                  </View>
+                  <View>
+                    <Text style={{ color: palette.textPrimary, fontSize: 16, fontWeight: '800' }}>Max Daily OT</Text>
+                    <Text style={{ color: palette.textSecondary, fontSize: 12, marginTop: 2 }}>Daily overtime limit</Text>
+                  </View>
+                </View>
+                <View style={{ backgroundColor: palette.bgInput, padding: 12, borderRadius: 12, borderLeftWidth: 3, borderLeftColor: palette.danger }}>
+                  <Text style={{ color: palette.textPrimary, fontSize: 24, fontWeight: '900' }}>
+                    {Math.floor(otSettings.max_daily_ot_minutes / 60)}h {otSettings.max_daily_ot_minutes % 60}m
+                  </Text>
+                  <Text style={{ color: palette.textSecondary, fontSize: 12, marginTop: 4 }}>maximum per day</Text>
+                </View>
+              </View>
+
+              {/* Weekly Off Days Card */}
+              <View style={[styles.leaveCard, { backgroundColor: palette.bgCard, borderColor: palette.border, shadowColor: palette.shadow, marginBottom: 16 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                  <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(99, 102, 241, 0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                    <Ionicons name="calendar" size={22} color={palette.primary} />
+                  </View>
+                  <View>
+                    <Text style={{ color: palette.textPrimary, fontSize: 16, fontWeight: '800' }}>Weekly Off Days</Text>
+                    <Text style={{ color: palette.textSecondary, fontSize: 12, marginTop: 2 }}>No work scheduled</Text>
+                  </View>
+                </View>
+                <View style={{ backgroundColor: palette.bgInput, padding: 12, borderRadius: 12 }}>
+                  <Text style={{ color: palette.textPrimary, fontSize: 14, fontWeight: '800', lineHeight: 22 }}>
+                    {otSettings.weekly_off_days}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Payment Condition Card */}
+              <View style={[styles.leaveCard, { backgroundColor: palette.bgCard, borderColor: palette.border, shadowColor: palette.shadow, marginBottom: 32 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                  <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(16, 185, 129, 0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                    <Ionicons name="wallet" size={22} color={palette.success} />
+                  </View>
+                  <View>
+                    <Text style={{ color: palette.textPrimary, fontSize: 16, fontWeight: '800' }}>Payment Condition</Text>
+                    <Text style={{ color: palette.textSecondary, fontSize: 12, marginTop: 2 }}>OT eligibility rule</Text>
+                  </View>
+                </View>
+                <View style={{ backgroundColor: palette.bgInput, padding: 12, borderRadius: 12 }}>
+                  <Text style={{ color: palette.textPrimary, fontSize: 14, fontWeight: '800', lineHeight: 22 }}>
+                    {otSettings.ot_payment_condition}
+                  </Text>
+                </View>
+              </View>
+            </ScrollView>
+          )}
           {/* TAB: HELPDESK */}
           {activeTab === 'Helpdesk' && (
             <ScrollView contentContainerStyle={{ padding: 24 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[palette.primary]} tintColor={palette.primary} />}>
@@ -673,7 +818,7 @@ function AppContent() {
                 </View>
               </View>
 
-              <TouchableOpacity activeOpacity={0.8} style={[styles.logoutBtn, { backgroundColor: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.2)' }]} onPress={logout}>
+            <TouchableOpacity activeOpacity={0.8} style={[styles.logoutBtn, { backgroundColor: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.2)' }]} onPress={handleLogout}>
                 <Ionicons name="log-out" size={20} color={palette.danger} />
                 <Text style={{ color: palette.danger, fontWeight: '800', fontSize: 16, marginLeft: 10 }}>Sign Out</Text>
               </TouchableOpacity>
@@ -683,24 +828,27 @@ function AppContent() {
       </Animated.View>
 
       {/* Floating Bottom Tab Bar */}
-      <View style={[styles.tabBar, { bottom: tabBarBottom, backgroundColor: palette.tabBg, borderColor: palette.border, shadowColor: palette.shadow }]}>
-        {['Home', 'History', 'Leaves', 'Payslips', 'Helpdesk', 'Profile'].map((tab) => {
-          const isActive = activeTab === tab;
-          let iconName = "";
-          if (tab === 'Home') iconName = isActive ? "grid" : "grid-outline";
-          if (tab === 'History') iconName = isActive ? "time" : "time-outline";
-          if (tab === 'Leaves') iconName = isActive ? "calendar" : "calendar-outline";
-          if (tab === 'Payslips') iconName = isActive ? "receipt" : "receipt-outline";
-          if (tab === 'Helpdesk') iconName = isActive ? "headset" : "headset-outline";
-          if (tab === 'Profile') iconName = isActive ? "person" : "person-outline";
+      <View style={[styles.tabBar, { bottom: tabBarBottom, backgroundColor: palette.tabBg, borderColor: palette.border, shadowColor: palette.shadow, paddingHorizontal: 0 }]}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12, alignItems: 'center', flexGrow: 1, justifyContent: 'space-between' }}>
+          {['Home', 'History', 'Leaves', 'Payslips', 'OT Info', 'Helpdesk', 'Profile'].map((tab) => {
+            const isActive = activeTab === tab;
+            let iconName = "";
+            if (tab === 'Home') iconName = isActive ? "grid" : "grid-outline";
+            if (tab === 'History') iconName = isActive ? "time" : "time-outline";
+            if (tab === 'Leaves') iconName = isActive ? "calendar" : "calendar-outline";
+            if (tab === 'Payslips') iconName = isActive ? "receipt" : "receipt-outline";
+            if (tab === 'OT Info') iconName = isActive ? "flash" : "flash-outline";
+            if (tab === 'Helpdesk') iconName = isActive ? "headset" : "headset-outline";
+            if (tab === 'Profile') iconName = isActive ? "person" : "person-outline";
 
-          return (
-            <TouchableOpacity key={tab} style={styles.tabItem} onPress={() => setActiveTab(tab)}>
-              <Ionicons name={iconName} size={24} color={isActive ? palette.primary : palette.textSecondary} />
-              {isActive && <Text style={[styles.tabText, { color: palette.primary }]}>{tab}</Text>}
-            </TouchableOpacity>
-          );
-        })}
+            return (
+              <TouchableOpacity key={tab} style={[styles.tabItem, { minWidth: 70, paddingHorizontal: 4 }]} onPress={() => setActiveTab(tab)}>
+                <Ionicons name={iconName} size={24} color={isActive ? palette.primary : palette.textSecondary} />
+                {isActive && <Text style={[styles.tabText, { color: palette.primary }]} numberOfLines={1}>{tab}</Text>}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
 
       {/* Advanced Leave Request Modal */}
