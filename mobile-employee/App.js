@@ -8,9 +8,18 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, FontAwesome5 } from "@expo/vector-icons";
 
 // --- SMART API URL CONFIGURATION ---
-// Auto-selects based on platform emulator. If testing on a physical phone via Expo Go,
-// replace this with your laptop's Wi-Fi IP address (e.g., "http://192.168.1.100:5000").
-const API_URL = Platform.OS === 'android' ? "http://10.0.2.2:5000" : "http://localhost:5000";
+// ⚠️ IMPORTANT: If you are testing on a PHYSICAL PHONE using Expo Go, your phone CANNOT
+// connect to 'localhost' or '10.0.2.2'. You MUST change the LOCAL_IP below to your
+// computer's actual Wi-Fi IPv4 address (e.g., "192.168.1.5").
+// 
+// For production (Render deployment), uncomment the Render URL.
+
+// const LOCAL_IP = "192.168.1.10"; // <--- CHANGE THIS to your PC's actual Wi-Fi IP Address
+// const BACKEND_URL = `http://${LOCAL_IP}:5000/api`;
+const BACKEND_URL = "https://attendance-system-full.onrender.com/api"; // <-- Use this for Render Production
+
+const rawApiUrl = (typeof process !== 'undefined' && process.env && process.env.EXPO_PUBLIC_API_URL) ? process.env.EXPO_PUBLIC_API_URL : BACKEND_URL;
+const API_URL = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl}/api`;
 
 const api = axios.create({
   baseURL: API_URL,
@@ -37,6 +46,19 @@ const formatMins = (mins) => {
   return `${h}h ${m}m`;
 };
 
+// SAFELY PARSE DATES (Prevents Android Hermes `Intl` crashes which freeze the app)
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const FULL_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+const safeGetMonthShort = (date) => MONTHS[date.getMonth()] || "";
+const safeGetMonthFull = (date) => FULL_MONTHS[date.getMonth()] || "";
+const safeGetWeekday = (date) => DAYS[date.getDay()] || "";
+const safeFormatDate = (date) => {
+  if (!date || isNaN(date.getTime())) return "--/--/----";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
 const LiveClock = React.memo(({ palette }) => {
   const [time, setTime] = useState(new Date());
   useEffect(() => {
@@ -47,7 +69,7 @@ const LiveClock = React.memo(({ palette }) => {
   return (
     <View style={styles.clockContainer}>
       <Text style={[styles.dateText, { color: palette.primary }]}>
-        {time.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase()}
+        {`${safeGetWeekday(time)}, ${safeGetMonthFull(time)} ${time.getDate()}`.toUpperCase()}
       </Text>
       <Text style={[styles.clockText, { color: palette.textPrimary }]}>
         {format12Hour(time, true)}
@@ -106,8 +128,29 @@ function AppContent() {
   const [leaveForm, setLeaveForm] = useState({ start_date: '', end_date: '', leave_type: 'Annual Leave', reason: '' });
   const [isApplyingLeave, setIsApplyingLeave] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [isAppReady, setIsAppReady] = useState(false);
   
   const fade = useRef(new Animated.Value(1)).current;
+  const loginFadeAnim = useRef(new Animated.Value(0)).current;
+  const loginSlideAnim = useRef(new Animated.Value(50)).current;
+  const logoFloatAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!token && isAppReady) {
+      loginFadeAnim.setValue(0);
+      loginSlideAnim.setValue(50);
+      Animated.parallel([
+        Animated.timing(loginFadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+        Animated.spring(loginSlideAnim, { toValue: 0, tension: 40, friction: 12, useNativeDriver: true }),
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(logoFloatAnim, { toValue: -12, duration: 2500, useNativeDriver: true }),
+            Animated.timing(logoFloatAnim, { toValue: 0, duration: 2500, useNativeDriver: true })
+          ])
+        )
+      ]).start();
+    }
+  }, [token, isAppReady, loginFadeAnim, loginSlideAnim, logoFloatAnim]);
 
   const handleLogout = useCallback(async () => {
     await AsyncStorage.removeItem("token");
@@ -137,10 +180,11 @@ function AppContent() {
           const checkInDate = new Date(latest.check_in);
           
           const today = new Date();
-          const attDate = new Date(latest.att_date);
-          const isToday = today.getFullYear() === attDate.getFullYear() && today.getMonth() === attDate.getMonth() && today.getDate() === attDate.getDate();
+          const diffHours = (today - checkInDate) / 3600000;
+          // Instead of strict date matching, rely on backend's punch flag or if shift started within 18 hours
+          const isTodayShift = latest.is_punched_in === true || diffHours < 18;
           
-          if (isToday) {
+          if (isTodayShift) {
             setCheckInTime(format12Hour(checkInDate));
             setCheckOutTime(latest.check_out ? format12Hour(new Date(latest.check_out)) : "--:--");
             setIsPunchedIn(latest.is_punched_in === true);
@@ -191,8 +235,16 @@ function AppContent() {
         if (savedCompany) setCompanyCode(savedCompany);
         if (savedUsername) setUsername(savedUsername);
         if (th) setTheme(th);
-        if (t) { setToken(t); loadData(t); }
-      } catch (err) {}
+        if (t) {
+          setToken(t);
+          // Fetch data in the background without blocking the startup UI
+          loadData(t);
+        }
+      } catch (err) {
+        console.log("Startup error:", err);
+      } finally {
+        setIsAppReady(true);
+      }
     })();
   }, [loadData]);
 
@@ -216,6 +268,10 @@ function AppContent() {
         loadData(data.token);
       }
     } catch (e) {
+      if (BACKEND_URL.includes("your-app-name")) {
+        Alert.alert("URL Error", "Aapne code mein Render ka asli URL add nahi kiya hai. 'your-app-name' ko apne deploy kiye gaye link se replace karein.");
+        return setIsLoggingIn(false);
+      }
       Alert.alert(isResetting ? "Reset Failed" : "Login Failed", e?.response?.data?.message || "Check connection");
     } finally {
       setIsLoggingIn(false);
@@ -232,18 +288,29 @@ function AppContent() {
     setIsLocating(true);
     let addressStr = "Unknown Location";
     try {
-      // Request permissions without blocking the main flow drastically
-      let { status } = await Location.requestForegroundPermissionsAsync();
+      // Check current permissions first to avoid re-requesting/blocking
+      let { status } = await Location.getForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        const req = await Location.requestForegroundPermissionsAsync();
+        status = req.status;
+      }
+      
       if (status === 'granted') {
-        // Fast Location Fetch for Zero Lag
+        // EXTREME Fast Location Fetch
         let loc = await Location.getLastKnownPositionAsync();
         if (!loc) {
-          loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
+          loc = await Promise.race([
+            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Lowest }), // Lowest accuracy is fastest
+            new Promise(resolve => setTimeout(() => resolve(null), 1000)) // Force strict 1 sec timeout for instant feel
+          ]);
         }
         if (loc) {
           try {
-            // Get Real Street/City Address
-            const [geocode] = await Location.reverseGeocodeAsync({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+            // Reverse Geocode with strict 1s timeout to prevent hanging
+            const [geocode] = await Promise.race([
+               Location.reverseGeocodeAsync({ latitude: loc.coords.latitude, longitude: loc.coords.longitude }),
+               new Promise(resolve => setTimeout(() => resolve(null), 1000))
+            ]);
             if (geocode) {
               addressStr = `${geocode.name || geocode.street || ''}, ${geocode.city || geocode.region || ''}`.replace(/^, /, '').trim();
             } else {
@@ -320,60 +387,89 @@ function AppContent() {
   const tabBarBottom = Math.max(insets.bottom, 12) + 8;
   const contentPadBottom = 76 + tabBarBottom;
 
+  if (!isAppReady) {
+    return (
+      <View style={{ flex: 1, backgroundColor: isDark ? "#09090b" : "#eef2ff", justifyContent: "center", alignItems: "center" }}>
+        <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={isDark ? "#09090b" : "#eef2ff"} />
+        <ActivityIndicator size="large" color="#6366f1" />
+        <Text style={{ marginTop: 16, color: isDark ? "#a1a1aa" : "#64748b", fontWeight: "600" }}>Connecting to Workspace...</Text>
+      </View>
+    );
+  }
+
   if (!token) {
-    const loginPadH = IS_SMALL_SCREEN ? 16 : 24;
-    const loginCardPad = IS_SMALL_SCREEN ? 22 : 28;
+    const loginPadH = IS_SMALL_SCREEN ? 20 : 32;
+    const loginCardPad = IS_SMALL_SCREEN ? 24 : 32;
+
     return (
       <View style={{ flex: 1, backgroundColor: isDark ? "#09090b" : "#eef2ff" }}>
         <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={isDark ? "#09090b" : "#eef2ff"} translucent={false} />
-        <LinearGradient
-          colors={isDark ? ["#09090b", "#1e1b4b", "#312e81"] : ["#eef2ff", "#e0e7ff", "#c7d2fe"]}
-          style={StyleSheet.absoluteFill}
-        />
+        
+        {/* Animated Background Gradient Layer */}
+        <LinearGradient colors={isDark ? ["#09090b", "#1e1b4b", "#312e81"] : ["#eef2ff", "#e0e7ff", "#c7d2fe"]} style={StyleSheet.absoluteFill} />
+        
+        {/* Decorative Blobs */}
+        <View style={{ position: 'absolute', top: -100, left: -50, width: 300, height: 300, borderRadius: 150, backgroundColor: isDark ? "rgba(99, 102, 241, 0.15)" : "rgba(99, 102, 241, 0.2)", transform: [{ scale: 1.2 }] }} />
+        <View style={{ position: 'absolute', bottom: -100, right: -50, width: 300, height: 300, borderRadius: 150, backgroundColor: isDark ? "rgba(139, 92, 246, 0.15)" : "rgba(139, 92, 246, 0.2)", transform: [{ scale: 1.2 }] }} />
+
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, paddingTop: insets.top, paddingBottom: insets.bottom }}>
-          <ScrollView
-            contentContainerStyle={{
-              flexGrow: 1,
-              justifyContent: "center",
-              paddingHorizontal: loginPadH,
-              paddingVertical: loginPadH,
-              minHeight: SCREEN_HEIGHT - insets.top - insets.bottom,
-            }}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-            bounces={false}
-          >
-            <Animated.View style={[styles.loginCard, IS_SMALL_SCREEN && styles.loginCardCompact, { opacity: fade, padding: loginCardPad, backgroundColor: isDark ? "rgba(24, 24, 27, 0.92)" : "rgba(255, 255, 255, 0.95)", borderColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(99, 102, 241, 0.15)", shadowColor: "#000" }]}>
-              <LinearGradient colors={["#6366f1", "#8b5cf6"]} style={[styles.loginLogoContainer, IS_SMALL_SCREEN && { width: 64, height: 64, marginBottom: 16 }]}>
-                <FontAwesome5 name="fingerprint" size={IS_SMALL_SCREEN ? 28 : 36} color="#fff" />
-              </LinearGradient>
-
-              <Text style={[styles.loginTitle, IS_SMALL_SCREEN && { fontSize: 28 }, { color: palette.textPrimary }]}>Pulse<Text style={{ color: palette.primary }}>HR</Text></Text>
-              <Text style={[styles.loginSubTitle, IS_SMALL_SCREEN && { fontSize: 14, marginBottom: 20 }, { color: palette.textSecondary }]}>{isResetting ? "Reset your password securely" : "Enterprise attendance access"}</Text>
-
-              <View style={[styles.inputGroup, IS_SMALL_SCREEN && { marginBottom: 14 }]}>
-                <Text style={[styles.inputLabel, { color: palette.textSecondary }]}>Company Code</Text>
-                <TextInput style={[styles.loginInput, IS_SMALL_SCREEN && styles.loginInputCompact, { color: palette.textPrimary, backgroundColor: palette.bgInput, borderColor: palette.border }]} value={companyCode} onChangeText={setCompanyCode} placeholder="PULSE-01" placeholderTextColor={palette.textSecondary} autoCapitalize="characters" />
+          <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: "center", paddingHorizontal: loginPadH, paddingVertical: loginPadH, minHeight: SCREEN_HEIGHT - insets.top - insets.bottom }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}>
+            
+            <Animated.View style={[styles.loginCard, IS_SMALL_SCREEN && styles.loginCardCompact, { opacity: loginFadeAnim, transform: [{ translateY: loginSlideAnim }], padding: loginCardPad, backgroundColor: isDark ? "rgba(24, 24, 27, 0.75)" : "rgba(255, 255, 255, 0.85)", borderColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.6)", shadowColor: isDark ? "#000" : "#6366f1", shadowOffset: { width: 0, height: 20 }, shadowOpacity: isDark ? 0.5 : 0.1, shadowRadius: 30, elevation: 10 }]}>
+              
+              <View style={{ alignItems: 'center', marginBottom: 32 }}>
+                <Animated.View style={{ transform: [{ translateY: logoFloatAnim }] }}>
+                  <LinearGradient colors={["#6366f1", "#8b5cf6"]} style={[{ width: 80, height: 80, borderRadius: 28, justifyContent: 'center', alignItems: 'center', shadowColor: "#6366f1", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.4, shadowRadius: 15, elevation: 8, marginBottom: 20 }, IS_SMALL_SCREEN && { width: 64, height: 64, borderRadius: 20, marginBottom: 16 }]}>
+                    <FontAwesome5 name="fingerprint" size={IS_SMALL_SCREEN ? 28 : 38} color="#fff" />
+                  </LinearGradient>
+                </Animated.View>
+                <Text style={{ fontSize: IS_SMALL_SCREEN ? 28 : 36, fontWeight: "900", letterSpacing: -1, color: palette.textPrimary }}>Pulse<Text style={{ color: palette.primary }}>HR</Text></Text>
+                <Text style={{ fontSize: IS_SMALL_SCREEN ? 14 : 15, fontWeight: '500', color: palette.textSecondary, marginTop: 8 }}>{isResetting ? "Reset your password securely" : "Enterprise attendance access"}</Text>
               </View>
 
-              <View style={[styles.inputGroup, IS_SMALL_SCREEN && { marginBottom: 14 }]}>
-                <Text style={[styles.inputLabel, { color: palette.textSecondary }]}>Employee Code</Text>
-                <TextInput style={[styles.loginInput, IS_SMALL_SCREEN && styles.loginInputCompact, { color: palette.textPrimary, backgroundColor: palette.bgInput, borderColor: palette.border }]} value={username} onChangeText={setUsername} placeholder="EMP-100" placeholderTextColor={palette.textSecondary} autoCapitalize="none" autoComplete="username" />
+              <View style={{ gap: 16 }}>
+                {/* Company Code Input */}
+                <View>
+                  <Text style={[styles.inputLabel, { color: palette.textSecondary }]}>Company Code</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: palette.bgInput, borderRadius: 16, paddingHorizontal: 16, height: IS_SMALL_SCREEN ? 50 : 56, borderWidth: 1, borderColor: palette.border }}>
+                    <Ionicons name="business" size={20} color={palette.primary} />
+                    <TextInput style={{ flex: 1, height: '100%', marginLeft: 12, color: palette.textPrimary, fontSize: IS_SMALL_SCREEN ? 15 : 16, fontWeight: '500' }} value={companyCode} onChangeText={setCompanyCode} placeholder="PULSE-01" placeholderTextColor={palette.textSecondary} autoCapitalize="characters" />
+                  </View>
+                </View>
+
+                {/* Employee Code Input */}
+                <View>
+                  <Text style={[styles.inputLabel, { color: palette.textSecondary }]}>Employee Code</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: palette.bgInput, borderRadius: 16, paddingHorizontal: 16, height: IS_SMALL_SCREEN ? 50 : 56, borderWidth: 1, borderColor: palette.border }}>
+                    <Ionicons name="person" size={20} color={palette.primary} />
+                    <TextInput style={{ flex: 1, height: '100%', marginLeft: 12, color: palette.textPrimary, fontSize: IS_SMALL_SCREEN ? 15 : 16, fontWeight: '500' }} value={username} onChangeText={setUsername} placeholder="EMP-100" placeholderTextColor={palette.textSecondary} autoCapitalize="none" autoComplete="username" />
+                  </View>
+                </View>
+
+                {/* Password Input */}
+                <View>
+                  <Text style={[styles.inputLabel, { color: palette.textSecondary }]}>{isResetting ? "New Password" : "Password"}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: palette.bgInput, borderRadius: 16, paddingHorizontal: 16, height: IS_SMALL_SCREEN ? 50 : 56, borderWidth: 1, borderColor: palette.border }}>
+                    <Ionicons name="lock-closed" size={20} color={palette.primary} />
+                    <TextInput style={{ flex: 1, height: '100%', marginLeft: 12, color: palette.textPrimary, fontSize: IS_SMALL_SCREEN ? 15 : 16, fontWeight: '500' }} value={password} onChangeText={setPassword} placeholder="••••••••" placeholderTextColor={palette.textSecondary} secureTextEntry autoComplete="password" />
+                  </View>
+                  <TouchableOpacity onPress={() => { setIsResetting(!isResetting); setPassword(""); }} style={{ alignSelf: "flex-end", marginTop: 12 }}>
+                    <Text style={{ color: palette.primary, fontSize: 13, fontWeight: "700" }}>{isResetting ? "Back to Login" : "Forgot Password?"}</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
-              <View style={[styles.inputGroup, IS_SMALL_SCREEN && { marginBottom: 14 }]}>
-                <Text style={[styles.inputLabel, { color: palette.textSecondary }]}>{isResetting ? "New Password" : "Password"}</Text>
-                <TextInput style={[styles.loginInput, IS_SMALL_SCREEN && styles.loginInputCompact, { color: palette.textPrimary, backgroundColor: palette.bgInput, borderColor: palette.border }]} value={password} onChangeText={setPassword} placeholder="••••••••" placeholderTextColor={palette.textSecondary} secureTextEntry autoComplete="password" />
-                <TouchableOpacity onPress={() => { setIsResetting(!isResetting); setPassword(""); }} style={{ alignSelf: "flex-end", marginTop: 10 }}>
-                  <Text style={{ color: palette.primary, fontSize: 13, fontWeight: "700" }}>{isResetting ? "Back to Login" : "Forgot Password?"}</Text>
-                </TouchableOpacity>
-              </View>
-
-              <TouchableOpacity activeOpacity={0.85} onPress={login} disabled={isLoggingIn}>
-                <LinearGradient colors={["#4f46e5", "#7c3aed"]} style={[styles.primaryBtn, IS_SMALL_SCREEN && { paddingVertical: 16 }]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-                  {isLoggingIn ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>{isResetting ? "Reset Password" : "Sign In"}</Text>}
+              <TouchableOpacity activeOpacity={0.85} onPress={login} disabled={isLoggingIn} style={{ marginTop: 32 }}>
+                <LinearGradient colors={["#4f46e5", "#7c3aed"]} style={{ borderRadius: 16, paddingVertical: IS_SMALL_SCREEN ? 16 : 18, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', shadowColor: "#4f46e5", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 8 }} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+                  {isLoggingIn ? <ActivityIndicator color="#fff" /> : (
+                    <>
+                      <Text style={{ color: "#fff", fontWeight: "800", fontSize: 16, letterSpacing: 0.5, marginRight: 8 }}>{isResetting ? "Reset Password" : "Secure Sign In"}</Text>
+                      {!isResetting && <Ionicons name="arrow-forward" size={20} color="#fff" />}
+                    </>
+                  )}
                 </LinearGradient>
               </TouchableOpacity>
+
             </Animated.View>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -527,7 +623,7 @@ function AppContent() {
                 <View key={idx} style={[styles.historyCard, { backgroundColor: palette.bgCard, borderColor: palette.border, shadowColor: palette.shadow }]}>
                   <View style={[styles.historyDateBox, { backgroundColor: palette.bgInput }]}>
                     <Text style={{ color: palette.primary, fontWeight: '800', fontSize: 18 }}>{new Date(item.att_date).getDate()}</Text>
-                    <Text style={{ color: palette.textSecondary, fontSize: 11, fontWeight: '700', textTransform: 'uppercase' }}>{new Date(item.att_date).toLocaleString('default', { month: 'short' })}</Text>
+                    <Text style={{ color: palette.textSecondary, fontSize: 11, fontWeight: '700', textTransform: 'uppercase' }}>{safeGetMonthShort(new Date(item.att_date))}</Text>
                   </View>
                   <View style={{ flex: 1, marginLeft: 16 }}>
                     <Text style={{ color: palette.success, fontWeight: '700', fontSize: 13, marginBottom: 4 }}>IN: {format12Hour(new Date(item.check_in))}</Text>
@@ -550,11 +646,11 @@ function AppContent() {
                 <View key={idx} style={[styles.historyCard, { backgroundColor: palette.bgCard, borderColor: palette.border, shadowColor: palette.shadow, padding: 20, marginBottom: 16, height: 'auto' }]}>
                   <View style={[styles.historyDateBox, { backgroundColor: palette.bgInput, width: 64, height: 64, borderRadius: 20 }]}>
                     <Text style={{ color: palette.primary, fontWeight: '900', fontSize: 22 }}>{new Date(item.att_date).getDate()}</Text>
-                    <Text style={{ color: palette.textSecondary, fontSize: 12, fontWeight: '800', textTransform: 'uppercase' }}>{new Date(item.att_date).toLocaleString('default', { month: 'short' })}</Text>
+                    <Text style={{ color: palette.textSecondary, fontSize: 12, fontWeight: '800', textTransform: 'uppercase' }}>{safeGetMonthShort(new Date(item.att_date))}</Text>
                   </View>
                   <View style={{ flex: 1, marginLeft: 20 }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
-                      <Text style={{ color: palette.textPrimary, fontWeight: '800', fontSize: 16 }}>{new Date(item.att_date).toLocaleDateString('en-US', { weekday: 'long' })}</Text>
+                      <Text style={{ color: palette.textPrimary, fontWeight: '800', fontSize: 16 }}>{safeGetWeekday(new Date(item.att_date))}</Text>
                     <View style={{ backgroundColor: item.status === 'LATE' ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
                         <Text style={{ color: item.status === 'LATE' ? palette.warning : palette.success, fontWeight: '800', fontSize: 11 }}>{item.status}</Text>
                       </View>
@@ -606,7 +702,7 @@ function AppContent() {
                       <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
                         <Ionicons name="calendar" size={14} color={palette.primary} />
                         <Text style={{ color: palette.textSecondary, fontSize: 14, marginLeft: 8, fontWeight: '500' }}>
-                          {new Date(leave.start_date).toLocaleDateString()}  →  {new Date(leave.end_date).toLocaleDateString()}
+                          {safeFormatDate(new Date(leave.start_date))}  →  {safeFormatDate(new Date(leave.end_date))}
                         </Text>
                       </View>
                       {leave.reason ? <Text style={{ color: palette.textSecondary, fontSize: 14, fontStyle: 'italic', backgroundColor: palette.bgInput, padding: 12, borderRadius: 8 }}>"{leave.reason}"</Text> : null}
@@ -636,7 +732,7 @@ function AppContent() {
                       </View>
                       <View>
                         <Text style={{ color: palette.textPrimary, fontSize: 16, fontWeight: '800' }}>{slip.month} {slip.year}</Text>
-                        <Text style={{ color: palette.textSecondary, fontSize: 12, marginTop: 4 }}>Uploaded: {new Date(slip.created_at).toLocaleDateString()}</Text>
+                        <Text style={{ color: palette.textSecondary, fontSize: 12, marginTop: 4 }}>Uploaded: {safeFormatDate(new Date(slip.created_at))}</Text>
                       </View>
                     </View>
                     <TouchableOpacity onPress={() => Linking.openURL(`${api.defaults.baseURL}${slip.file_path}`)} style={{ padding: 8 }}>

@@ -131,7 +131,7 @@ vercel --prod
 
 1. **Create `.env.production` in web-admin:**
    ```
-   REACT_APP_API_URL=https://attendance-backend.railway.app
+   REACT_APP_API_URL=https://attendance-backend.railway.app/api
    ```
 
 2. **Or set in Vercel Dashboard:**

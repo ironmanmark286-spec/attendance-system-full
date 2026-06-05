@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useMemo } from "react";
-import api from "../api";
+import api, { BACKEND_URL } from "../api";
 import OTSettings from "./OTSettings";
 import InsightCard from "../components/InsightCard";
 import AnimatedStat from "../components/AnimatedStat";
@@ -71,6 +71,7 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
   
   // Data State
   const [rows, setRows] = useState([]);
+  const [monthlySummary, setMonthlySummary] = useState([]);
   const [month, setMonth] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -86,6 +87,8 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
   
   // UI State
   const [searchQuery, setSearchQuery] = useState("");
+  const [attendanceView, setAttendanceView] = useState("daily"); // 'daily' or 'monthly'
+  const [selectedPunches, setSelectedPunches] = useState(null);
   const [isAddEmpModalOpen, setIsAddEmpModalOpen] = useState(false);
   const [newEmp, setNewEmp] = useState({ empCode: "", name: "", password: "", designation: "" });
   const [addedEmpDetails, setAddedEmpDetails] = useState(null);
@@ -162,15 +165,20 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
       setLeaves(leavesRes.data || []);
       setPayslips(payslipsRes.data || []);
       setNotices(noticesRes.data || []);
+      setMonthlySummary(monthlyRes.data || []);
     } catch (e) { 
       console.error(e); 
     } finally { 
-      setLoading(false); 
+      if (showLoading) setLoading(false); 
     }
   };
 
   useEffect(() => {
-    loadData();
+    loadData(true);
+    const interval = setInterval(() => {
+      loadData(false); // Instant refresh without screen loading blinks
+    }, 10000); // 10 seconds auto-refresh
+    return () => clearInterval(interval);
   }, [month]);
 
   const formatMins = (mins) => {
@@ -500,6 +508,7 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
 
   // USE-MEMO: Yeh aapki website ko 10x fast kar dega jab aap search karenge (No lag!)
   const filteredRows = useMemo(() => filterBySearch(rows, searchQuery), [rows, searchQuery]);
+  const filteredMonthly = useMemo(() => filterBySearch(monthlySummary, searchQuery), [monthlySummary, searchQuery]);
   const filteredEmployees = useMemo(() => filterBySearch(employees, searchQuery), [employees, searchQuery]);
   const filteredLeaves = useMemo(() => filterBySearch(leaves, searchQuery), [leaves, searchQuery]);
   const filteredTickets = useMemo(() => filterBySearch(tickets, searchQuery), [tickets, searchQuery]);
@@ -569,7 +578,7 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
   return (
     <div className="app-layout">
       {/* Sidebar */}
-      <aside className="sidebar" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+      <aside className="sidebar" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div className="brand">
           <div style={{ width: 40, height: 40, background: 'linear-gradient(135deg, var(--primary), #a855f7)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', boxShadow: '0 8px 16px -4px var(--primary)' }}>
             <Activity size={20} />
@@ -956,6 +965,8 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                   <p style={{ color: 'var(--text-muted)', fontSize: 16, marginTop: 4, fontWeight: 500 }}>Comprehensive daily tracking.</p>
                 </div>
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  <button className={`btn ${attendanceView === 'daily' ? '' : 'btn-secondary'} hover-lift`} onClick={() => setAttendanceView('daily')}>Daily Logs</button>
+                  <button className={`btn ${attendanceView === 'monthly' ? '' : 'btn-secondary'} hover-lift`} onClick={() => setAttendanceView('monthly')}>Monthly Payroll Summary</button>
                   <button className="btn btn-secondary hover-lift" onClick={handleGenerateFakeData}>
                     <Zap size={18} color="var(--warning)" /> Generate Fake Data
                   </button>
@@ -966,6 +977,7 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                 </div>
               </div>
 
+              {attendanceView === 'daily' ? (
               <div className="table-wrapper fade-in-up stagger-2">
                 <table>
                   <thead>
@@ -996,9 +1008,10 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                               <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-muted)', width: 28 }}>OUT</span> 
                               <span style={{ fontWeight: 600 }}>{r.check_out ? new Date(r.check_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "--:--"}</span>
                             </div>
-                            {r.punches && r.punches.length > 2 && (
-                              <div style={{ fontSize: 11, color: 'var(--primary)', fontWeight: 700, marginTop: 6, cursor: 'pointer' }}>
-                                View All {r.punches.length} Punches
+                            {r.punches && r.punches.length > 0 && (
+                              <div style={{ fontSize: 11, color: 'var(--primary)', fontWeight: 700, marginTop: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                                   onClick={() => setSelectedPunches({ name: r.name, date: r.att_date, punches: r.punches })}>
+                                View Full Logs ({r.punches.length})
                               </div>
                             )}
                           </td>
@@ -1135,7 +1148,7 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                           <td>{slip.year}</td>
                           <td>{new Date(slip.created_at).toLocaleDateString()}</td>
                           <td>
-                            <a href={`http://localhost:5000${slip.file_path}`} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--primary)', textDecoration: 'none', fontWeight: 600 }}>
+                            <a href={`${BACKEND_URL}${slip.file_path}`} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--primary)', textDecoration: 'none', fontWeight: 600 }}>
                               <FileText size={16} /> View
                             </a>
                           </td>
@@ -1217,6 +1230,39 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                   </tbody>
                 </table>
               </div>
+              ) : (
+              <div className="table-wrapper fade-in-up stagger-2">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Employee</th>
+                      <th>Total Present</th>
+                      <th>Total Late</th>
+                      <th>Total Overtime</th>
+                      <th>Total Worked Hours</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredMonthly.length === 0 ? (
+                      <tr><td colSpan="5" style={{ textAlign: 'center', padding: '60px', color: 'var(--text-muted)' }}>No data for this month.</td></tr>
+                    ) : (
+                      filteredMonthly.map((r) => (
+                        <tr key={r.id}>
+                          <td>
+                            <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: 16 }}>{r.name}</div>
+                            <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: 4 }}>{r.emp_code}</div>
+                          </td>
+                          <td><span style={{ fontWeight: 800, color: 'var(--success)' }}>{r.total_present || 0} Days</span></td>
+                          <td><span style={{ fontWeight: 800, color: 'var(--warning)' }}>{r.total_late || 0} Days</span></td>
+                          <td><span style={{ fontWeight: 800, color: 'var(--primary)' }}>{formatMins(r.total_overtime)}</span></td>
+                          <td><span style={{ fontWeight: 800 }}>{formatMins(r.total_minutes)}</span></td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              )}
             </>
           )}
 
@@ -1702,6 +1748,29 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                 <button type="submit" className="btn">Upload Payslip</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Full Punch Logs Modal */}
+      {selectedPunches && (
+        <div className="modal-overlay" onClick={(e) => { if(e.target.className === 'modal-overlay') setSelectedPunches(null) }}>
+          <div className="modal-content" style={{ maxWidth: 450, padding: 32 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+              <h2 style={{ fontSize: 24, fontWeight: 800 }}>Full Punch Logs</h2>
+              <button className="btn btn-secondary" style={{ padding: 8, borderRadius: 4, border: 'none' }} onClick={() => setSelectedPunches(null)}>
+                <X size={24} />
+              </button>
+            </div>
+            <p style={{ fontWeight: 600, color: 'var(--text-muted)', marginBottom: 24 }}>Timeline for {selectedPunches.name}</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 400, overflowY: 'auto', paddingRight: 8 }}>
+              {selectedPunches.punches.map((p, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 16, background: 'var(--bg-input)', borderRadius: 12, borderLeft: `4px solid ${p.punch_type === 'IN' ? 'var(--success)' : 'var(--danger)'}` }}>
+                  <span style={{ fontWeight: 800, color: p.punch_type === 'IN' ? 'var(--success)' : 'var(--danger)' }}>{p.punch_type}</span>
+                  <span style={{ fontWeight: 700, fontSize: 16 }}>{new Date(p.punch_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

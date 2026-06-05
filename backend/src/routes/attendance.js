@@ -130,7 +130,8 @@ router.get("/history", auth, roleGuard("EMPLOYEE"), async (req, res) => {
   try {
     const employeeId = req.user.employee_id;
     const [rows] = await pool.query(
-      `SELECT id, att_date, check_in, check_out, total_minutes, overtime_minutes, status, check_in_location, check_out_location 
+      `SELECT id, att_date, check_in, check_out, total_minutes, overtime_minutes, status, check_in_location, check_out_location,
+       (SELECT punch_type FROM punch_logs WHERE attendance_id = attendance.id ORDER BY punch_time DESC LIMIT 1) AS last_punch
        FROM attendance 
        WHERE employee_id = ? 
        ORDER BY att_date DESC LIMIT 30`,
@@ -141,16 +142,9 @@ router.get("/history", auth, roleGuard("EMPLOYEE"), async (req, res) => {
       const now = new Date();
       const today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
       
-      const attDateObj = new Date(rows[0].att_date);
-      const attDateStr = attDateObj.getFullYear() + '-' + String(attDateObj.getMonth() + 1).padStart(2, '0') + '-' + String(attDateObj.getDate()).padStart(2, '0');
-
-      if (attDateStr === today) {
-        const [logs] = await pool.query(
-          "SELECT punch_type FROM punch_logs WHERE attendance_id = ? ORDER BY punch_time DESC LIMIT 1",
-          [rows[0].id]
-        );
-        rows[0].is_punched_in = logs.length > 0 && logs[0].punch_type === 'IN';
-      }
+      // A punch is active if the last log is 'IN' and it's the most recent attendance record
+      // We use the last_punch retrieved directly via SQL to prevent JS timezone parsing bugs
+      rows[0].is_punched_in = rows[0].last_punch === 'IN';
     }
 
     return res.json(rows);
@@ -247,6 +241,39 @@ router.get("/report/monthly", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), asyn
     return res.send(parser.parse(rows));
   } catch (err) {
     console.error("Monthly report error:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+// NEW: Get Monthly Summary for HR Payroll
+router.get("/summary/monthly", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), async (req, res) => {
+  try {
+    const { month } = req.query; // format: YYYY-MM
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ message: "month is required in YYYY-MM format" });
+    }
+
+    const startDate = `${month}-01`;
+    const [endRows] = await pool.query("SELECT LAST_DAY(?) AS last_day", [startDate]);
+    const endDate = endRows[0].last_day;
+
+    const [rows] = await pool.query(
+      `SELECT e.id, e.emp_code, e.name,
+        SUM(CASE WHEN a.status IN ('PRESENT', 'LATE', 'HALF_DAY') THEN 1 ELSE 0 END) as total_present,
+        SUM(CASE WHEN a.status = 'LATE' THEN 1 ELSE 0 END) as total_late,
+        SUM(a.total_minutes) as total_minutes,
+        SUM(a.overtime_minutes) as total_overtime
+       FROM employees e
+       LEFT JOIN attendance a ON e.id = a.employee_id AND a.att_date BETWEEN ? AND ?
+       WHERE e.company_id = ? AND e.status = 'ACTIVE'
+       GROUP BY e.id, e.emp_code, e.name
+       ORDER BY e.name`,
+      [startDate, endDate, req.user.company_id]
+    );
+
+    return res.json(rows);
+  } catch (err) {
+    console.error("Monthly summary error:", err);
     return res.status(500).json({ message: "Server error" });
   }
 });

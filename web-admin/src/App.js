@@ -32,12 +32,17 @@ const GlobalDesignOverrides = () => (
 
     /* Floating Layout Architecture */
     .app-layout {
+      display: flex;
+      flex-direction: row;
+      min-height: 100vh;
       padding: 16px;
       gap: 16px;
       background: transparent !important;
     }
     
     .sidebar {
+      width: 260px;
+      flex-shrink: 0;
       border-radius: 24px !important;
       height: calc(100vh - 32px) !important;
       background: var(--bg-card) !important;
@@ -87,6 +92,73 @@ const GlobalDesignOverrides = () => (
       justify-content: space-between;
       align-items: center;
       gap: 16px;
+    }
+
+    /* =========================================
+       MOBILE RESPONSIVE DESIGN (PHONES & TABLETS)
+       ========================================= */
+    @media (max-width: 992px) {
+      .app-layout {
+        flex-direction: column !important;
+        padding: 8px !important;
+      }
+      
+      .sidebar {
+        width: 100% !important;
+        height: auto !important;
+        flex-direction: row !important;
+        padding: 10px !important;
+        margin-bottom: 8px !important;
+        overflow-x: auto;
+      }
+      
+      .sidebar .brand {
+        display: none !important; /* Phone me logo text hide karein */
+      }
+      
+      .nav-menu {
+        flex-direction: row !important;
+        gap: 8px;
+        overflow-x: auto;
+      }
+      
+      .nav-item {
+        flex: 0 0 auto;
+        padding: 8px 16px !important;
+      }
+      
+      .sidebar-footer {
+        display: none !important;
+      }
+      
+      .topbar {
+        flex-direction: column;
+        gap: 16px;
+        padding: 16px !important;
+      }
+      
+      .search-box {
+        width: 100% !important;
+      }
+      
+      .user-profile {
+        width: 100%;
+        justify-content: space-between;
+        overflow-x: auto;
+      }
+
+      /* Dashboard Grids ko Single Column banayein */
+      div[style*="gridTemplateColumns"], 
+      div[style*="grid-template-columns"] {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 16px !important;
+      }
+      
+      .table-wrapper, .table-container {
+        overflow-x: auto;
+        width: 100%;
+      }
     }
   `}</style>
 );

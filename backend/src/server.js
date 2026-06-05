@@ -29,6 +29,13 @@ app.use("/api/notices", noticesRoutes);
 app.use("/api/ot-settings", otSettingsRoutes);
 app.use("/api/ai", aiRoutes);
 
+// --- Serve Frontend on Render ---
+// Serve the web-admin build folder if it exists (for Render monolithic deployment)
+app.use(express.static(path.join(__dirname, "../../web-admin/build")));
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "../../web-admin/build", "index.html"));
+});
+
 const port = process.env.PORT || 5000;
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
