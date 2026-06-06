@@ -20,7 +20,7 @@ router.post("/create-order", async (req, res) => {
     if (plan === "MONTHLY") {
       amount = 499 * 100; // Razorpay expects amount in paise
     } else if (plan === "YEARLY") {
-      amount = 1999 * 100;
+      amount = 4999 * 100;
     } else {
       return res.status(400).json({ message: "Invalid plan selected" });
     }
@@ -31,7 +31,17 @@ router.post("/create-order", async (req, res) => {
       receipt: `receipt_${req.user.company_id}_${Date.now()}`
     };
 
-    const order = await razorpay.orders.create(options);
+    let order;
+    if (process.env.RAZORPAY_KEY_ID === undefined || process.env.RAZORPAY_KEY_ID === "rzp_test_YourTestKeyHere" || !process.env.RAZORPAY_KEY_ID) {
+      // Mock order for testing when real keys are not set
+      order = {
+        id: `order_mock_${Date.now()}`,
+        amount: options.amount,
+        currency: options.currency
+      };
+    } else {
+      order = await razorpay.orders.create(options);
+    }
     
     if (!order) {
       return res.status(500).json({ message: "Failed to create order" });
@@ -40,7 +50,8 @@ router.post("/create-order", async (req, res) => {
     res.json({
       orderId: order.id,
       amount: order.amount,
-      currency: order.currency
+      currency: order.currency,
+      rzpKey: process.env.RAZORPAY_KEY_ID || "rzp_test_YourTestKeyHere"
     });
   } catch (error) {
     console.error("Order creation error:", error);
@@ -65,7 +76,11 @@ router.post("/verify-payment", async (req, res) => {
     const digest = shasum.digest("hex");
 
     if (digest !== razorpay_signature) {
-      return res.status(400).json({ message: "Transaction not legit!" });
+      // Allow mock signature during testing if keys aren't configured
+      const isDummyKey = process.env.RAZORPAY_KEY_ID === undefined || process.env.RAZORPAY_KEY_ID === "rzp_test_YourTestKeyHere" || !process.env.RAZORPAY_KEY_ID;
+      if (!(isDummyKey && razorpay_signature === "mock_signature")) {
+        return res.status(400).json({ message: "Transaction not legit!" });
+      }
     }
 
     // Payment is successful, update subscription

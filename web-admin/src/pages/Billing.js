@@ -42,11 +42,33 @@ export default function Billing() {
       setProcessing(true);
       // 1. Create Order on Backend
       const orderRes = await api.post("/billing/create-order", { plan });
-      const { orderId, amount, currency } = orderRes.data;
+      const { orderId, amount, currency, rzpKey: backendRzpKey } = orderRes.data;
 
       // 2. Open Razorpay Checkout
+      const rzpKey = backendRzpKey || process.env.REACT_APP_RAZORPAY_KEY_ID || "rzp_test_YourTestKeyHere";
+      
+      // If we are using the mock key, bypass Razorpay UI and directly verify
+      if (rzpKey === "rzp_test_YourTestKeyHere") {
+        alert("TEST MODE: Simulating payment success (Real Razorpay key not found).");
+        try {
+          const verifyRes = await api.post("/billing/verify-payment", {
+            razorpay_order_id: orderId,
+            razorpay_payment_id: "pay_mock_12345",
+            razorpay_signature: "mock_signature",
+            plan: plan
+          });
+          alert(verifyRes.data.message || "Payment Successful!");
+          fetchStatus();
+          navigate("/dashboard");
+        } catch (err) {
+          console.error("Mock verification failed", err);
+          alert("Payment verification failed. Please contact support.");
+        }
+        return;
+      }
+
       const options = {
-        key: process.env.REACT_APP_RAZORPAY_KEY_ID || "rzp_test_YourTestKeyHere",
+        key: rzpKey,
         amount: amount,
         currency: currency,
         name: "Attendance System",
@@ -122,7 +144,9 @@ export default function Billing() {
           <div>
             <p style={styles.label}>Trial Ends</p>
             <p style={styles.value}>
-              {status?.trial_ends_at ? new Date(status.trial_ends_at).toLocaleDateString() : "N/A"}
+              {status?.trial_ends_at 
+                ? `${new Date(status.trial_ends_at).toLocaleDateString()} (${Math.max(0, Math.ceil((new Date(status.trial_ends_at) - new Date()) / (1000 * 60 * 60 * 24)))} Days Left)` 
+                : "30 Days"}
             </p>
           </div>
           <div>
@@ -169,9 +193,9 @@ export default function Billing() {
         <div style={{...styles.pricingCard, border: '2px solid var(--primary)'}}>
           <div style={styles.popularBadge}>Best Value</div>
           <h3>Yearly Plan</h3>
-          <p style={styles.price}>₹1999 <span style={styles.period}>/ year</span></p>
+          <p style={styles.price}>₹4999 <span style={styles.period}>/ year</span></p>
           <ul style={styles.features}>
-            <li>✔ Save ₹3989 per year!</li>
+            <li>✔ Save ₹989 per year!</li>
             <li>✔ Unlimited Employees</li>
             <li>✔ Attendance Tracking</li>
             <li>✔ Payroll & Leave Management</li>
