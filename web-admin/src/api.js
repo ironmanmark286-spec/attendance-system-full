@@ -20,4 +20,16 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 402) {
+      if (window.location.pathname !== "/billing") {
+        window.location.href = "/billing";
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 export default api;

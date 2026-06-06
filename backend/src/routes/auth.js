@@ -16,7 +16,14 @@ router.post("/register", async (req, res) => {
     const [existingComp] = await pool.query("SELECT id FROM companies WHERE company_code = ?", [companyCode]);
     if (existingComp.length) return res.status(400).json({ message: "Workspace ID (Company Code) already taken! Please choose a unique one." });
 
-    const [compResult] = await pool.query("INSERT INTO companies (company_code, name) VALUES (?, ?)", [companyCode, companyName]);
+    // Set trial ends at 30 days from now
+    const trialEndsAt = new Date();
+    trialEndsAt.setDate(trialEndsAt.getDate() + 30);
+
+    const [compResult] = await pool.query(
+      "INSERT INTO companies (company_code, name, trial_ends_at) VALUES (?, ?, ?)", 
+      [companyCode, companyName, trialEndsAt]
+    );
     const compId = compResult.insertId;
 
     const hash = await bcrypt.hash(password, 10);

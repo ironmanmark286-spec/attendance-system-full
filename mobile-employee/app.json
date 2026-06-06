@@ -1,52 +1,30 @@
 {
   "expo": {
-    "name": "Mobile Employee",
-    "slug": "mobile-employee",
+    "name": "PulseHR",
+    "slug": "pulse-hr-attendance",
     "version": "1.0.0",
-    "sdkVersion": "55.0.0",
     "orientation": "portrait",
-    "platforms": [
-      "android",
-      "ios",
-      "web"
-    ],
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#09090b"
+    },
     "assetBundlePatterns": [
       "**/*"
     ],
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#09090b"
+      },
+      "package": "com.yourcompany.pulsehr"
+    },
     "extra": {
       "eas": {
-        "projectId": "bf79a06a-5a57-4202-9dce-ab94df562cc9"
+        "projectId": "bcf610cf-55b9-4b59-8188-a55adf056a64"
       }
-    },
-    "android": {
-      "package": "com.ashwani121.mobileemployee",
-      "softwareKeyboardLayoutMode": "resize"
-    },
-    "splash": {
-      "backgroundColor": "#ffffff"
-    },
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
-    "updates": {
-      "url": "https://u.expo.dev/bf79a06a-5a57-4202-9dce-ab94df562cc9",
-      "fallbackToCacheTimeout": 0
-    },
-    "ios": {
-      "bundleIdentifier": "com.ashwani121.mobileemployee",
-      "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
-      }
-    },
-    "plugins": [
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "usesCleartextTraffic": true
-          }
-        }
-      ]
-    ]
+    }
   }
 }

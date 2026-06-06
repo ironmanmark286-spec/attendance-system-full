@@ -11,6 +11,8 @@ const payslipRoutes = require("./routes/payslips");
 const noticesRoutes = require("./routes/notices");
 const otSettingsRoutes = require("./routes/ot-settings");
 const aiRoutes = require("./routes/ai");
+const billingRoutes = require("./routes/billing");
+const auth = require("./middleware/auth");
 
 const app = express();
 app.use(cors());
@@ -28,6 +30,7 @@ app.use("/api/payslips", payslipRoutes);
 app.use("/api/notices", noticesRoutes);
 app.use("/api/ot-settings", otSettingsRoutes);
 app.use("/api/ai", aiRoutes);
+app.use("/api/billing", auth, billingRoutes);
 
 // --- Serve Frontend on Render ---
 // Serve the web-admin build folder if it exists (for Render monolithic deployment)

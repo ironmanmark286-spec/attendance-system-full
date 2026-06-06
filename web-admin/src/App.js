@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { useEffect, useState } from "react";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
+import Billing from "./pages/Billing";
 import "./styles-pro.css";
 import "./animations.css";
 
@@ -213,6 +214,14 @@ export default function App() {
           element={
             <PrivateRoute>
               <Dashboard theme={theme} onToggleTheme={toggleTheme} animationsEnabled={animationsEnabled} onToggleAnimations={toggleAnimations} />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/billing"
+          element={
+            <PrivateRoute>
+              <Billing />
             </PrivateRoute>
           }
         />
