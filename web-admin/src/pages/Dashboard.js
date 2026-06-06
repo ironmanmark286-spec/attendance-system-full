@@ -148,16 +148,17 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
     scrollToBottom();
   }, [copilotMessages, isCopilotOpen]);
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     try {
-      const [attRes, statsRes, empRes, leavesRes, payslipsRes, noticesRes] = await Promise.all([
+      const [attRes, statsRes, empRes, leavesRes, payslipsRes, noticesRes, monthlyRes] = await Promise.all([
         api.get("/attendance/today").catch(() => ({ data: [] })),
         api.get("/attendance/stats/today").catch(() => ({ data: { total: 0, present: 0, late: 0, absent: 0, companyName: "Error Loading", companyCode: "", adminName: "Admin" } })),
         api.get("/employees").catch(() => ({ data: [] })),
         api.get("/leaves").catch(() => ({ data: [] })),
         api.get("/payslips").catch(() => ({ data: [] })),
-        api.get("/notices").catch(() => ({ data: [] }))
+        api.get("/notices").catch(() => ({ data: [] })),
+        api.get(`/attendance/summary/monthly?month=${month}`).catch(() => ({ data: [] }))
       ]);
       setRows(attRes.data);
       setStats(statsRes.data);
@@ -165,7 +166,7 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
       setLeaves(leavesRes.data || []);
       setPayslips(payslipsRes.data || []);
       setNotices(noticesRes.data || []);
-      setMonthlySummary(monthlyRes.data || []);
+      setMonthlySummary(monthlyRes?.data || []);
     } catch (e) { 
       console.error(e); 
     } finally { 
@@ -1230,39 +1231,6 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                   </tbody>
                 </table>
               </div>
-              ) : (
-              <div className="table-wrapper fade-in-up stagger-2">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Employee</th>
-                      <th>Total Present</th>
-                      <th>Total Late</th>
-                      <th>Total Overtime</th>
-                      <th>Total Worked Hours</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredMonthly.length === 0 ? (
-                      <tr><td colSpan="5" style={{ textAlign: 'center', padding: '60px', color: 'var(--text-muted)' }}>No data for this month.</td></tr>
-                    ) : (
-                      filteredMonthly.map((r) => (
-                        <tr key={r.id}>
-                          <td>
-                            <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: 16 }}>{r.name}</div>
-                            <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: 4 }}>{r.emp_code}</div>
-                          </td>
-                          <td><span style={{ fontWeight: 800, color: 'var(--success)' }}>{r.total_present || 0} Days</span></td>
-                          <td><span style={{ fontWeight: 800, color: 'var(--warning)' }}>{r.total_late || 0} Days</span></td>
-                          <td><span style={{ fontWeight: 800, color: 'var(--primary)' }}>{formatMins(r.total_overtime)}</span></td>
-                          <td><span style={{ fontWeight: 800 }}>{formatMins(r.total_minutes)}</span></td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              )}
             </>
           )}
 
