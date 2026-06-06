@@ -1041,6 +1041,39 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                   </tbody>
                 </table>
               </div>
+              ) : (
+              <div className="table-wrapper fade-in-up stagger-2">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Employee</th>
+                      <th>Total Present</th>
+                      <th>Total Late</th>
+                      <th>Total Overtime</th>
+                      <th>Total Worked Hours</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredMonthly.length === 0 ? (
+                      <tr><td colSpan="5" style={{ textAlign: 'center', padding: '60px', color: 'var(--text-muted)' }}>No data for this month.</td></tr>
+                    ) : (
+                      filteredMonthly.map((r) => (
+                        <tr key={r.id}>
+                          <td>
+                            <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: 16 }}>{r.name}</div>
+                            <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: 4 }}>{r.emp_code}</div>
+                          </td>
+                          <td><span style={{ fontWeight: 800, color: 'var(--success)' }}>{r.total_present || 0} Days</span></td>
+                          <td><span style={{ fontWeight: 800, color: 'var(--warning)' }}>{r.total_late || 0} Days</span></td>
+                          <td><span style={{ fontWeight: 800, color: 'var(--primary)' }}>{formatMins(r.total_overtime)}</span></td>
+                          <td><span style={{ fontWeight: 800 }}>{formatMins(r.total_minutes)}</span></td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              )}
             </>
           )}
 
