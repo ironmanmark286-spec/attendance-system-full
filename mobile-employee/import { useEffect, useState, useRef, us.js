@@ -616,9 +616,6 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
           <button className={`nav-item ${activeNav === 'ot_settings' ? 'active' : ''}`} onClick={() => setActiveNav('ot_settings')}>
             <Zap size={20} /> Overtime Settings
           </button>
-          <button className="nav-item" onClick={() => window.location.href = '/billing'} style={{ color: 'var(--primary)', border: '1px solid var(--primary)' }}>
-            <CreditCard size={20} /> Upgrade Plan
-          </button>
         </nav>
 
         <div className="sidebar-footer" style={{ marginTop: 'auto' }}>
