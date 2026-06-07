@@ -169,7 +169,7 @@ export default function Billing() {
           <h3>Monthly Plan</h3>
           <p style={styles.price}>₹499 <span style={styles.period}>/ month</span></p>
           <ul style={styles.features}>
-            <li>✔ Unlimited Employees</li>
+            <li>✔ Up to 50 Employees</li>
             <li>✔ Attendance Tracking</li>
             <li>✔ Payroll & Leave Management</li>
           </ul>

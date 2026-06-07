@@ -46,9 +46,22 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ message: "Company Code, Username, and Password are required" });
     }
 
-    const [comps] = await pool.query("SELECT id FROM companies WHERE company_code = ?", [companyCode]);
+    const [comps] = await pool.query("SELECT id, trial_ends_at, subscription_ends_at, subscription_status FROM companies WHERE company_code = ?", [companyCode]);
     if (!comps.length) return res.status(401).json({ message: "Invalid Company Code" });
     const compId = comps[0].id;
+    const comp = comps[0];
+
+    const now = new Date();
+    let isExpired = comp.subscription_status === 'EXPIRED';
+    if (comp.subscription_status === 'TRIAL' && comp.trial_ends_at && new Date(comp.trial_ends_at) < now) {
+      isExpired = true;
+    } else if (comp.subscription_status === 'ACTIVE' && comp.subscription_ends_at && new Date(comp.subscription_ends_at) < now) {
+      isExpired = true;
+    }
+    
+    if (isExpired && comp.subscription_status !== 'EXPIRED') {
+      await pool.query("UPDATE companies SET subscription_status = 'EXPIRED' WHERE id = ?", [compId]);
+    }
 
     let [rows] = await pool.query("SELECT * FROM users WHERE username = ? AND company_id = ?", [username, compId]);
 
@@ -74,6 +87,7 @@ router.post("/login", async (req, res) => {
 
     const emp = rows[0];
     if (emp.status !== "ACTIVE") return res.status(403).json({ message: "Employee inactive" });
+    if (isExpired) return res.status(403).json({ message: "Workspace subscription has expired. Please contact your admin." });
 
     const passOk = await bcrypt.compare(password, emp.password_hash);
     if (!passOk) return res.status(401).json({ message: "Invalid credentials" });

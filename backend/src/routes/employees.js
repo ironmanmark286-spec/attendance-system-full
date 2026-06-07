@@ -59,6 +59,15 @@ router.post("/", auth, roles("ADMIN"), async (req, res) => {
       return res.status(400).json({ message: "Password must be at least 6 characters" });
     }
 
+    const [empCount] = await pool.query("SELECT COUNT(*) as count FROM employees WHERE company_id = ?", [req.user.company_id]);
+    const count = empCount[0].count;
+    
+    const [compRows] = await pool.query("SELECT subscription_plan FROM companies WHERE id = ?", [req.user.company_id]);
+    const plan = compRows[0]?.subscription_plan || 'FREE';
+    if (plan !== 'YEARLY' && count >= 50) {
+      return res.status(403).json({ message: "Employee limit (50) reached on Monthly plan. Upgrade to Yearly plan for unlimited employees." });
+    }
+
     const [existing] = await pool.query(
       "SELECT id FROM employees WHERE emp_code = ? AND company_id = ?",
       [empCode, req.user.company_id]
@@ -84,6 +93,13 @@ router.post("/", auth, roles("ADMIN"), async (req, res) => {
 router.post("/generate-bulk", auth, roles("ADMIN"), async (req, res) => {
   try {
     const companyId = req.user.company_id;
+    
+    const [compRows] = await pool.query("SELECT subscription_plan FROM companies WHERE id = ?", [companyId]);
+    const plan = compRows[0]?.subscription_plan || 'FREE';
+    if (plan !== 'YEARLY') {
+      return res.status(403).json({ message: "Bulk generation requires the Yearly plan to bypass the 50 employee limit." });
+    }
+
     const bulkPass = "Test@123";
     const hash = await bcrypt.hash(bulkPass, 10);
     const values = [];

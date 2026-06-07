@@ -1,54 +1,14 @@
-﻿import React, { useState, useEffect } from "react";
+﻿﻿import React, { useState, useEffect } from "react";
 import api from "../api";
 import {
   Clock,
   Save,
   AlertCircle,
   CheckCircle2,
-  Palette,
   Zap,
   Briefcase,
   TrendingUp,
 } from "lucide-react";
-
-const THEMES = {
-  professional: {
-    primary: "#6366f1",
-    secondary: "#818cf8",
-    accent: "#4f46e5",
-    light: "rgba(99, 102, 241, 0.1)",
-  },
-  vibrant: {
-    primary: "#ec4899",
-    secondary: "#f472b6",
-    accent: "#ec0000",
-    light: "rgba(236, 72, 153, 0.1)",
-  },
-  ocean: {
-    primary: "#0ea5e9",
-    secondary: "#06b6d4",
-    accent: "#0369a1",
-    light: "rgba(14, 165, 233, 0.1)",
-  },
-  forest: {
-    primary: "#10b981",
-    secondary: "#34d399",
-    accent: "#047857",
-    light: "rgba(16, 185, 129, 0.1)",
-  },
-  sunset: {
-    primary: "#f97316",
-    secondary: "#fb923c",
-    accent: "#ea580c",
-    light: "rgba(249, 115, 22, 0.1)",
-  },
-  midnight: {
-    primary: "#1e293b",
-    secondary: "#334155",
-    accent: "#0f172a",
-    light: "rgba(30, 41, 59, 0.1)",
-  },
-};
 
 export default function OTSettings({ theme }) {
   const [otSettings, setOtSettings] = useState({
@@ -62,7 +22,6 @@ export default function OTSettings({ theme }) {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [error, setError] = useState("");
-  const [selectedTheme, setSelectedTheme] = useState("professional");
 
   useEffect(() => {
     loadOTSettings();
@@ -115,16 +74,6 @@ export default function OTSettings({ theme }) {
     }
   };
 
-  const isDark = theme === "dark";
-  const bgCard = isDark ? "#1e293b" : "#ffffff";
-  const textPrimary = isDark ? "#f1f5f9" : "#0f172a";
-  const textSecondary = isDark ? "#94a3b8" : "#475569";
-  const textTertiary = isDark ? "#64748b" : "#94a3b8";
-  const borderColor = isDark ? "#334155" : "#e2e8f0";
-  const bgInput = isDark ? "#0f172a" : "#f8fafc";
-  const bgSecondary = isDark ? "#0f172a" : "#f9fafb";
-
-  const currentTheme = THEMES[selectedTheme];
 
   return (
     <div className="fade-in" style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
@@ -136,7 +85,7 @@ export default function OTSettings({ theme }) {
               width: "44px",
               height: "44px",
               borderRadius: "16px",
-              background: `linear-gradient(135deg, ${currentTheme.primary}, ${currentTheme.secondary})`,
+              background: `var(--primary)`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -149,7 +98,7 @@ export default function OTSettings({ theme }) {
               style={{
                 fontSize: "28px",
                 fontWeight: "800",
-                color: textPrimary,
+                color: "var(--text-main)",
                 margin: 0,
                 letterSpacing: "-0.5px",
               }}
@@ -158,7 +107,7 @@ export default function OTSettings({ theme }) {
             </h1>
             <p
               style={{
-                color: textSecondary,
+                color: "var(--text-muted)",
                 margin: "4px 0 0 0",
                 fontSize: "14px",
               }}
@@ -169,74 +118,6 @@ export default function OTSettings({ theme }) {
         </div>
       </div>
 
-      {/* Theme Selector */}
-      <div
-        style={{
-          backgroundColor: bgCard,
-          borderRadius: "28px",
-          padding: "24px",
-          marginBottom: "32px",
-          border: `1px solid ${borderColor}`,
-          boxShadow: "0 20px 40px -20px rgba(0,0,0,0.05)",
-          backdropFilter: 'blur(20px)'
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
-          <Palette size={20} color={currentTheme.primary} />
-          <h3 style={{ fontSize: "16px", fontWeight: "700", color: textPrimary, margin: 0 }}>
-            Choose Theme
-          </h3>
-        </div>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
-            gap: "12px",
-          }}
-        >
-          {Object.entries(THEMES).map(([themeName, themeColors]) => (
-            <button
-              key={themeName}
-              onClick={() => setSelectedTheme(themeName)}
-              style={{
-                padding: "12px 16px",
-                borderRadius: "16px",
-                border:
-                  selectedTheme === themeName
-                    ? `2px solid ${themeColors.primary}`
-                    : `1px solid ${borderColor}`,
-                backgroundColor:
-                  selectedTheme === themeName ? themeColors.light : bgSecondary,
-                color: textPrimary,
-                fontWeight: "600",
-                fontSize: "13px",
-                cursor: "pointer",
-                transition: "all 0.3s ease",
-                textTransform: "capitalize",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "8px",
-                boxShadow:
-                  selectedTheme === themeName
-                    ? `0 0 0 3px ${themeColors.light}`
-                    : "none",
-              }}
-            >
-              <div
-                style={{
-                  width: "12px",
-                  height: "12px",
-                  borderRadius: "50%",
-                  background: `linear-gradient(135deg, ${themeColors.primary}, ${themeColors.secondary})`,
-                }}
-              />
-              {themeName}
-            </button>
-          ))}
-        </div>
-      </div>
-
       {isSaved && (
         <div
           style={{
@@ -244,11 +125,11 @@ export default function OTSettings({ theme }) {
             alignItems: "center",
             gap: "12px",
             padding: "14px 16px",
-            backgroundColor: `${currentTheme.light}`,
-            borderLeft: `4px solid ${currentTheme.primary}`,
+            backgroundColor: "rgba(16, 185, 129, 0.1)",
+            borderLeft: `4px solid var(--success)`,
             borderRadius: "16px",
             marginBottom: "24px",
-            color: currentTheme.primary,
+            color: "var(--success)",
             fontWeight: "600",
             fontSize: "14px",
           }}
@@ -269,7 +150,7 @@ export default function OTSettings({ theme }) {
             borderLeft: "4px solid #ef4444",
             borderRadius: "16px",
             marginBottom: "24px",
-            color: "#ef4444",
+            color: "var(--danger)",
             fontWeight: "600",
             fontSize: "14px",
           }}
@@ -291,12 +172,12 @@ export default function OTSettings({ theme }) {
         <div
           className="fade-in-up stagger-2 hover-lift"
           style={{
-            backgroundColor: bgCard,
+            backgroundColor: "var(--bg-card)",
             borderRadius: "28px",
             padding: "28px",
-            border: `1px solid ${borderColor}`,
+            border: `1px solid var(--border)`,
             boxShadow: "0 20px 40px -20px rgba(0,0,0,0.05)",
-            borderTop: `4px solid ${currentTheme.primary}`,
+            borderTop: `4px solid var(--primary)`,
             backdropFilter: 'blur(20px)'
           }}
         >
@@ -306,15 +187,15 @@ export default function OTSettings({ theme }) {
                 width: "40px",
                 height: "40px",
                 borderRadius: "16px",
-                background: currentTheme.light,
+                background: "rgba(99, 102, 241, 0.1)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <Briefcase size={20} color={currentTheme.primary} />
+              <Briefcase size={20} color="var(--primary)" />
             </div>
-            <h3 style={{ fontSize: "16px", fontWeight: "800", color: textPrimary, margin: 0 }}>
+            <h3 style={{ fontSize: "16px", fontWeight: "800", color: "var(--text-main)", margin: 0 }}>
               Work Hours Config
             </h3>
           </div>
@@ -325,7 +206,7 @@ export default function OTSettings({ theme }) {
                 display: "block",
                 fontSize: "12px",
                 fontWeight: "700",
-                color: textSecondary,
+                color: "var(--text-muted)",
                 marginBottom: "8px",
                 textTransform: "uppercase",
                 letterSpacing: "0.5px",
@@ -343,15 +224,16 @@ export default function OTSettings({ theme }) {
                 width: "100%",
                 padding: "12px 14px",
                 borderRadius: "16px",
-                border: `2px solid ${borderColor}`,
-                backgroundColor: bgInput,
-                color: textPrimary,
+                border: `2px solid var(--border)`,
+                backgroundColor: "var(--bg-input)",
+                color: "var(--text-main)",
                 fontSize: "14px",
                 fontWeight: "600",
                 transition: "border-color 0.2s",
+                boxSizing: 'border-box'
               }}
             />
-            <p style={{ color: textTertiary, fontSize: "12px", margin: "8px 0 0 0" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: "12px", margin: "8px 0 0 0" }}>
               Currently set to {otSettings.standard_hours} hours
             </p>
           </div>
@@ -362,7 +244,7 @@ export default function OTSettings({ theme }) {
                 display: "block",
                 fontSize: "12px",
                 fontWeight: "700",
-                color: textSecondary,
+                color: "var(--text-muted)",
                 marginBottom: "8px",
                 textTransform: "uppercase",
                 letterSpacing: "0.5px",
@@ -380,14 +262,15 @@ export default function OTSettings({ theme }) {
                 width: "100%",
                 padding: "12px 14px",
                 borderRadius: "16px",
-                border: `2px solid ${borderColor}`,
-                backgroundColor: bgInput,
-                color: textPrimary,
+                border: `2px solid var(--border)`,
+                backgroundColor: "var(--bg-input)",
+                color: "var(--text-main)",
                 fontSize: "14px",
                 fontWeight: "600",
+                boxSizing: 'border-box'
               }}
             />
-            <p style={{ color: textTertiary, fontSize: "12px", margin: "8px 0 0 0" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: "12px", margin: "8px 0 0 0" }}>
               {Math.floor(otSettings.ot_applicable_from_minutes / 60)}h{" "}
               {otSettings.ot_applicable_from_minutes % 60}m
             </p>
@@ -398,12 +281,12 @@ export default function OTSettings({ theme }) {
         <div
           className="fade-in-up stagger-3 hover-lift"
           style={{
-            backgroundColor: bgCard,
+            backgroundColor: "var(--bg-card)",
             borderRadius: "28px",
             padding: "28px",
-            border: `1px solid ${borderColor}`,
+            border: `1px solid var(--border)`,
             boxShadow: "0 20px 40px -20px rgba(0,0,0,0.05)",
-            borderTop: `4px solid ${currentTheme.secondary}`,
+            borderTop: `4px solid var(--success)`,
             backdropFilter: 'blur(20px)'
           }}
         >
@@ -413,15 +296,15 @@ export default function OTSettings({ theme }) {
                 width: "40px",
                 height: "40px",
                 borderRadius: "16px",
-                background: currentTheme.light,
+                background: "rgba(16, 185, 129, 0.1)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <TrendingUp size={20} color={currentTheme.secondary} />
+              <TrendingUp size={20} color="var(--success)" />
             </div>
-            <h3 style={{ fontSize: "16px", fontWeight: "800", color: textPrimary, margin: 0 }}>
+            <h3 style={{ fontSize: "16px", fontWeight: "800", color: "var(--text-main)", margin: 0 }}>
               Calculation Rules
             </h3>
           </div>
@@ -432,7 +315,7 @@ export default function OTSettings({ theme }) {
                 display: "block",
                 fontSize: "12px",
                 fontWeight: "700",
-                color: textSecondary,
+                color: "var(--text-muted)",
                 marginBottom: "8px",
                 textTransform: "uppercase",
                 letterSpacing: "0.5px",
@@ -450,14 +333,15 @@ export default function OTSettings({ theme }) {
                 width: "100%",
                 padding: "12px 14px",
                 borderRadius: "16px",
-                border: `2px solid ${borderColor}`,
-                backgroundColor: bgInput,
-                color: textPrimary,
+                border: `2px solid var(--border)`,
+                backgroundColor: "var(--bg-input)",
+                color: "var(--text-main)",
                 fontSize: "14px",
                 fontWeight: "600",
+                boxSizing: 'border-box'
               }}
             />
-            <p style={{ color: textTertiary, fontSize: "12px", margin: "8px 0 0 0" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: "12px", margin: "8px 0 0 0" }}>
               {Math.round((otSettings.ot_rate_multiplier - 1) * 100)}% extra compensation
             </p>
           </div>
@@ -468,7 +352,7 @@ export default function OTSettings({ theme }) {
                 display: "block",
                 fontSize: "12px",
                 fontWeight: "700",
-                color: textSecondary,
+                color: "var(--text-muted)",
                 marginBottom: "8px",
                 textTransform: "uppercase",
                 letterSpacing: "0.5px",
@@ -486,14 +370,15 @@ export default function OTSettings({ theme }) {
                 width: "100%",
                 padding: "12px 14px",
                 borderRadius: "16px",
-                border: `2px solid ${borderColor}`,
-                backgroundColor: bgInput,
-                color: textPrimary,
+                border: `2px solid var(--border)`,
+                backgroundColor: "var(--bg-input)",
+                color: "var(--text-main)",
                 fontSize: "14px",
                 fontWeight: "600",
+                boxSizing: 'border-box'
               }}
             />
-            <p style={{ color: textTertiary, fontSize: "12px", margin: "8px 0 0 0" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: "12px", margin: "8px 0 0 0" }}>
               Maximum {Math.floor(otSettings.max_daily_ot_minutes / 60)}h{" "}
               {otSettings.max_daily_ot_minutes % 60}m per day
             </p>
@@ -504,12 +389,12 @@ export default function OTSettings({ theme }) {
         <div
           className="fade-in-up stagger-4 hover-lift"
           style={{
-            backgroundColor: bgCard,
+            backgroundColor: "var(--bg-card)",
             borderRadius: "28px",
             padding: "28px",
-            border: `1px solid ${borderColor}`,
+            border: `1px solid var(--border)`,
             boxShadow: "0 20px 40px -20px rgba(0,0,0,0.05)",
-            borderTop: `4px solid ${currentTheme.accent}`,
+            borderTop: `4px solid var(--warning)`,
             backdropFilter: 'blur(20px)'
           }}
         >
@@ -519,15 +404,15 @@ export default function OTSettings({ theme }) {
                 width: "40px",
                 height: "40px",
                 borderRadius: "16px",
-                background: currentTheme.light,
+                background: "rgba(245, 158, 11, 0.1)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <Zap size={20} color={currentTheme.accent} />
+              <Zap size={20} color="var(--warning)" />
             </div>
-            <h3 style={{ fontSize: "16px", fontWeight: "800", color: textPrimary, margin: 0 }}>
+            <h3 style={{ fontSize: "16px", fontWeight: "800", color: "var(--text-main)", margin: 0 }}>
               Additional Settings
             </h3>
           </div>
@@ -538,7 +423,7 @@ export default function OTSettings({ theme }) {
                 display: "block",
                 fontSize: "12px",
                 fontWeight: "700",
-                color: textSecondary,
+                color: "var(--text-muted)",
                 marginBottom: "8px",
                 textTransform: "uppercase",
                 letterSpacing: "0.5px",
@@ -554,14 +439,15 @@ export default function OTSettings({ theme }) {
                 width: "100%",
                 padding: "12px 14px",
                 borderRadius: "16px",
-                border: `2px solid ${borderColor}`,
-                backgroundColor: bgInput,
-                color: textPrimary,
+                border: `2px solid var(--border)`,
+                backgroundColor: "var(--bg-input)",
+                color: "var(--text-main)",
                 fontSize: "14px",
                 fontWeight: "500",
+                boxSizing: 'border-box'
               }}
             />
-            <p style={{ color: textTertiary, fontSize: "12px", margin: "8px 0 0 0" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: "12px", margin: "8px 0 0 0" }}>
               Comma-separated (e.g., Saturday,Sunday)
             </p>
           </div>
@@ -572,7 +458,7 @@ export default function OTSettings({ theme }) {
                 display: "block",
                 fontSize: "12px",
                 fontWeight: "700",
-                color: textSecondary,
+                color: "var(--text-muted)",
                 marginBottom: "8px",
                 textTransform: "uppercase",
                 letterSpacing: "0.5px",
@@ -588,14 +474,15 @@ export default function OTSettings({ theme }) {
                 width: "100%",
                 padding: "12px 14px",
                 borderRadius: "16px",
-                border: `2px solid ${borderColor}`,
-                backgroundColor: bgInput,
-                color: textPrimary,
+                border: `2px solid var(--border)`,
+                backgroundColor: "var(--bg-input)",
+                color: "var(--text-main)",
                 fontSize: "14px",
                 fontWeight: "500",
+                boxSizing: 'border-box'
               }}
             />
-            <p style={{ color: textTertiary, fontSize: "12px", margin: "8px 0 0 0" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: "12px", margin: "8px 0 0 0" }}>
               Describe OT eligibility criteria
             </p>
           </div>
@@ -610,7 +497,7 @@ export default function OTSettings({ theme }) {
           gap: "12px",
           marginTop: "32px",
           paddingTop: "24px",
-          borderTop: `1px solid ${borderColor}`,
+          borderTop: `1px solid var(--border)`,
         }}
       >
         <button
@@ -622,7 +509,7 @@ export default function OTSettings({ theme }) {
             padding: "14px 24px",
             borderRadius: "50px",
             border: "none",
-            background: `linear-gradient(135deg, ${currentTheme.primary}, ${currentTheme.secondary})`,
+            background: `var(--primary)`,
             color: "#ffffff",
             fontWeight: "700",
             fontSize: "14px",
@@ -634,7 +521,7 @@ export default function OTSettings({ theme }) {
             gap: "8px",
             opacity: isLoading ? 0.7 : 1,
             transform: !isLoading ? "translateY(0)" : "translateY(2px)",
-            boxShadow: `0 4px 12px ${currentTheme.light}`,
+            boxShadow: `0 4px 12px rgba(0,0,0,0.1)`,
           }}
         >
           <Save size={18} />
@@ -646,9 +533,9 @@ export default function OTSettings({ theme }) {
           style={{
             padding: "14px 24px",
             borderRadius: "50px",
-            border: `2px solid ${borderColor}`,
-            backgroundColor: bgInput,
-            color: textPrimary,
+            border: `2px solid var(--border)`,
+            backgroundColor: "var(--bg-input)",
+            color: "var(--text-main)",
             fontWeight: "700",
             fontSize: "14px",
             cursor: "pointer",

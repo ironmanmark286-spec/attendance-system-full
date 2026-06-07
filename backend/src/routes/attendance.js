@@ -173,7 +173,21 @@ router.get("/stats/today", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), async (
     `, [dateStr, companyId]);
     
     // Fetch Company and Admin Details
-    const [compRows] = await pool.query("SELECT name, company_code FROM companies WHERE id = ?", [companyId]);
+    const [compRows] = await pool.query("SELECT name, company_code, subscription_status, trial_ends_at, subscription_ends_at FROM companies WHERE id = ?", [companyId]);
+    
+    if (compRows.length) {
+      const comp = compRows[0];
+      const now = new Date();
+      let isExpired = comp.subscription_status === 'EXPIRED';
+      if (comp.subscription_status === 'TRIAL' && comp.trial_ends_at && new Date(comp.trial_ends_at) < now) isExpired = true;
+      if (comp.subscription_status === 'ACTIVE' && comp.subscription_ends_at && new Date(comp.subscription_ends_at) < now) isExpired = true;
+      
+      if (isExpired) {
+        if (comp.subscription_status !== 'EXPIRED') await pool.query("UPDATE companies SET subscription_status = 'EXPIRED' WHERE id = ?", [companyId]);
+        return res.status(402).json({ message: "Subscription expired" });
+      }
+    }
+    
     const companyName = compRows.length ? compRows[0].name : "Workspace";
     const companyCode = compRows.length ? compRows[0].company_code : "";
 
