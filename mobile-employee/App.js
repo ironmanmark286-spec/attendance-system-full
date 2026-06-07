@@ -123,10 +123,7 @@ function AppContent() {
   const [payslips, setPayslips] = useState([]);
   const [onlineTeam, setOnlineTeam] = useState([]);
   
-  const [myTickets, setMyTickets] = useState([
-    { id: 'TKT-102', title: 'Laptop Battery Setup Issue', status: 'IN_PROGRESS', date: 'Oct 24, 2024', priority: 'High' },
-    { id: 'TKT-089', title: 'Salary Slip Request', status: 'RESOLVED', date: 'Oct 10, 2024', priority: 'Low' }
-  ]);
+  const [myTickets, setMyTickets] = useState([]);
   
   const [otSettings, setOtSettings] = useState({
     standard_hours: 9.0,

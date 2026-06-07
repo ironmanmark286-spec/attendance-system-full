@@ -2,6 +2,18 @@ require('dotenv').config();
 const pool = require('./src/db');
 (async () => {
   try {
+    await pool.query("ALTER TABLE companies ADD COLUMN admin_email VARCHAR(255) NULL AFTER name;");
+    console.log('Added admin_email column to companies');
+  } catch (e) {
+    console.log('admin_email might already exist:', e.message);
+  }
+  try {
+    await pool.query("ALTER TABLE companies ADD COLUMN settings TEXT NULL;");
+    console.log('Added settings column to companies');
+  } catch (e) {
+    console.log('settings might already exist:', e.message);
+  }
+  try {
     await pool.query("ALTER TABLE companies ADD COLUMN trial_ends_at TIMESTAMP NULL;");
     console.log('Added trial_ends_at column to companies');
   } catch (e) {

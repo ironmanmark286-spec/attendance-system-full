@@ -292,62 +292,6 @@ router.get("/summary/monthly", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), asy
   }
 });
 
-// NEW: Generate Fake Data for Testing
-router.post("/generate-fake-data", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), async (req, res) => {
-  try {
-    const companyId = req.user.company_id;
-    
-    // Get all employees for this company
-    const [emps] = await pool.query("SELECT id FROM employees WHERE company_id = ?", [companyId]);
-    if (emps.length === 0) {
-      return res.status(400).json({ message: "Please onboard at least 1 employee first!" });
-    }
-
-    // Get existing dates to prevent duplicate crashes
-    const [existingRows] = await pool.query("SELECT employee_id, att_date FROM attendance");
-    const existingMap = new Set(existingRows.map(r => {
-      const d = new Date(r.att_date);
-      return `${r.employee_id}_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    }));
-
-    const values = [];
-
-    // Generate realistic attendance for the last 15 days
-    for (const emp of emps) {
-      for (let d = 0; d < 15; d++) {
-        const date = new Date();
-        date.setDate(date.getDate() - d);
-        // Local Date string to prevent timezone offset bugs
-        const dateStr = date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, '0') + "-" + String(date.getDate()).padStart(2, '0');
-
-        if (existingMap.has(`${emp.id}_${dateStr}`)) continue;
-
-        // Randomize attendance (10% Absent, 20% Late, 70% Present)
-        const rand = Math.random();
-        if (rand < 0.1) continue; // Absent
-
-        const isLate = rand < 0.3; 
-        const checkIn = new Date(date);
-        checkIn.setHours(isLate ? 9 : 8, isLate ? 15 + Math.floor(Math.random() * 40) : Math.floor(Math.random() * 59), 0);
-
-        const checkOut = new Date(date);
-        // Check-out between 5:00 PM and 6:59 PM (testing strict 9-to-5)
-        checkOut.setHours(17 + Math.floor(Math.random() * 2), Math.floor(Math.random() * 59), 0);
-
-        values.push([emp.id, dateStr, checkIn, checkOut, Math.floor((checkOut - checkIn) / 60000), isLate ? 'LATE' : 'PRESENT', "Tech Park, Mumbai", "Tech Park, Mumbai"]);
-      }
-    }
-    
-    if (values.length > 0) {
-      await pool.query("INSERT INTO attendance (employee_id, att_date, check_in, check_out, total_minutes, status, check_in_location, check_out_location) VALUES ?", [values]);
-    }
-    res.json({ message: `${values.length} fake 9-to-5 attendance records generated successfully!` });
-  } catch (err) {
-    console.error("Generate fake data error:", err);
-    return res.status(500).json({ message: "Server error" });
-  }
-});
-
 // NEW: Get online team members for mobile app
 router.get("/online-team", auth, roleGuard("EMPLOYEE"), async (req, res) => {
   try {

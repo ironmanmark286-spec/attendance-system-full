@@ -1,6 +1,7 @@
 require("dotenv").config();
 const mysql = require("mysql2/promise");
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 
 async function createOwner() {
   const connection = await mysql.createConnection({
@@ -11,25 +12,35 @@ async function createOwner() {
   });
 
   try {
-    const ownerCompanyCode = "AK-OWNER";
     const ownerCompanyName = "Attendance Platform Owner";
     const ownerUsername = "superadmin";
-    const ownerPasswordPlain = "Owner@2026"; // Easy to change if needed
+    // Dynamically generate a random password every time you run this to avoid hardcoded credentials
+    const ownerPasswordPlain = "Admin@" + crypto.randomBytes(4).toString("hex").toUpperCase(); 
 
     // 1. Create or Find Owner Company
     console.log("Setting up owner company...");
-    let [compRows] = await connection.query("SELECT id FROM companies WHERE company_code = ?", [ownerCompanyCode]);
+    let [compRows] = await connection.query("SELECT id, company_code FROM companies WHERE name = ?", [ownerCompanyName]);
     let compId;
+    let workspaceId;
 
     if (compRows.length > 0) {
       compId = compRows[0].id;
-      console.log("Owner company already exists.");
+      workspaceId = compRows[0].company_code;
+      // Update old format (like AK-OWNER) to new WS- format automatically
+      if (!workspaceId.startsWith("WS-")) {
+        workspaceId = "WS-" + crypto.randomBytes(3).toString("hex").toUpperCase();
+        await connection.query("UPDATE companies SET company_code = ? WHERE id = ?", [workspaceId, compId]);
+        console.log("Updated old company code to new Workspace ID format.");
+      } else {
+        console.log("Owner company already exists.");
+      }
     } else {
+      workspaceId = "WS-" + crypto.randomBytes(3).toString("hex").toUpperCase();
       // Create company with lifetime active subscription just in case
       const [insertComp] = await connection.query(
         `INSERT INTO companies (company_code, name, subscription_plan, subscription_status, subscription_ends_at) 
          VALUES (?, ?, 'YEARLY', 'ACTIVE', '2037-12-31 00:00:00')`,
-        [ownerCompanyCode, ownerCompanyName]
+        [workspaceId, ownerCompanyName]
       );
       compId = insertComp.insertId;
       console.log("Owner company created.");
@@ -55,7 +66,7 @@ async function createOwner() {
     console.log("\n=================================================");
     console.log("✅ OWNER CREDENTIALS GENERATED SUCCESSFULLY");
     console.log("=================================================");
-    console.log("Workspace ID / Company Code : " + ownerCompanyCode);
+    console.log("Workspace ID                : " + workspaceId);
     console.log("Username                    : " + ownerUsername);
     console.log("Password                    : " + ownerPasswordPlain);
     console.log("=================================================");

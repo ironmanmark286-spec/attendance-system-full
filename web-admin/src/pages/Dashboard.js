@@ -82,11 +82,7 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
   const [stats, setStats] = useState({ total: 0, present: 0, late: 0, absent: 0, companyName: "Loading...", companyCode: "", adminName: "Admin" });
   const [employees, setEmployees] = useState([]);
   const [leaves, setLeaves] = useState([]);
-  const [tickets, setTickets] = useState([
-    { id: 'TKT-001', employee: 'Amit S.', issue: 'VPN Access Issue - Frequent Disconnects', status: 'OPEN', priority: 'HIGH', date: '2024-10-25' },
-    { id: 'TKT-002', employee: 'Priya M.', issue: 'Leave Balance Query Check', status: 'RESOLVED', priority: 'LOW', date: '2024-10-24' },
-    { id: 'TKT-003', employee: 'Ravi K.', issue: 'New Monitor Request for Design Work', status: 'IN_PROGRESS', priority: 'MEDIUM', date: '2024-10-26' },
-  ]);
+  const [tickets, setTickets] = useState([]);
   
   // UI State
   const [searchQuery, setSearchQuery] = useState("");
@@ -259,20 +255,6 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
     }
   };
 
-  const handleGenerateBulkEmployees = async () => {
-    if (!window.confirm("Are you sure you want to generate 100 fake employees for testing?")) return;
-    setLoading(true);
-    try {
-      const res = await api.post("/employees/generate-bulk");
-      alert(res.data.message);
-      loadData();
-    } catch (err) {
-      alert(err.response?.data?.message || "Failed to generate bulk employees");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleUpdateCompanyName = async (e) => {
     e.preventDefault();
     try {
@@ -282,17 +264,6 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
       alert("Company name updated successfully!");
     } catch (err) {
       alert(err.response?.data?.message || "Failed to update company name");
-    }
-  };
-
-  const handleGenerateFakeData = async () => {
-    if (!window.confirm("Are you sure? This will generate 15 days of fake attendance data for all current employees in your workspace.")) return;
-    try {
-      const res = await api.post("/attendance/generate-fake-data");
-      alert(res.data.message);
-      loadData();
-    } catch (err) {
-      alert(err.response?.data?.message || "Failed to generate data");
     }
   };
 
@@ -450,16 +421,6 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
           newArr[newArr.length - 1] = { role: 'ai', text: `Aaj ka status: \\n+✅ ${stats.present} Present\\n⏰ ${stats.late} Late\\n❌ ${stats.absent} Absent\\nTotal Workforce: ${stats.total} employees.`, time: new Date().toISOString() };
           return newArr;
         });
-        return true;
-      }
-
-      if (lower.includes("fake") || lower.includes("generate data") || lower.includes("mock data")) {
-        setCopilotMessages(prev => {
-          const newArr = [...prev];
-          newArr[newArr.length - 1] = { role: 'ai', text: "Generating fake data... 🔄 Please check your dashboard in a moment. Note: Data will be generated only for existing active employees.", time: new Date().toISOString() };
-          return newArr;
-        });
-        handleGenerateFakeData();
         return true;
       }
 
@@ -1006,9 +967,6 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                   <button className={`btn ${attendanceView === 'daily' ? '' : 'btn-secondary'} hover-lift`} onClick={() => setAttendanceView('daily')}>Daily Logs</button>
                   <button className={`btn ${attendanceView === 'monthly' ? '' : 'btn-secondary'} hover-lift`} onClick={() => setAttendanceView('monthly')}>Monthly Payroll Summary</button>
-                  <button className="btn btn-secondary hover-lift" onClick={handleGenerateFakeData}>
-                    <Zap size={18} color="var(--warning)" /> Generate Fake Data
-                  </button>
                   <input className="form-control" style={{ width: 'auto' }} type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
                   <button className="btn hover-lift" style={{ background: '#0f172a' }} onClick={downloadCsv}>
                     <Download size={18} /> Export CSV
@@ -1314,11 +1272,6 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                   <p style={{ color: 'var(--text-muted)', fontSize: 16, marginTop: 4, fontWeight: 500 }}>Manage workforce access.</p>
                 </div>
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                  {workspace?.features?.bulk_employee_gen && (
-                    <button className="btn btn-secondary" style={{ padding: '14px 24px', fontSize: 16 }} onClick={handleGenerateBulkEmployees} disabled={loading}>
-                      <Users size={20} /> Generate 100 Employees
-                    </button>
-                  )}
                   <button className="btn" style={{ padding: '14px 24px', fontSize: 16 }} onClick={() => setIsAddEmpModalOpen(true)}>
                     <UserPlus size={20} /> Onboard New Employee
                   </button>

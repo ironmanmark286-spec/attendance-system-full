@@ -5,20 +5,32 @@
 require("dotenv").config();
 const bcrypt = require("bcryptjs");
 const pool = require("./src/db");
+const crypto = require("crypto");
 
-const COMPANY_CODE = "CMP-01";
 const COMPANY_NAME = "Default Company";
 const ADMIN_USER = "admin";
-const ADMIN_PASS = "Admin@123";
+const ADMIN_PASS = "Admin@" + crypto.randomBytes(4).toString("hex").toUpperCase();
 
 (async () => {
   try {
     const hash = await bcrypt.hash(ADMIN_PASS, 10);
 
-    await pool.query(
-      "INSERT IGNORE INTO companies (company_code, name) VALUES (?, ?)",
-      [COMPANY_CODE, COMPANY_NAME]
-    );
+    let [existingComp] = await pool.query("SELECT id, company_code FROM companies WHERE name = ?", [COMPANY_NAME]);
+    let COMPANY_CODE;
+    
+    if (existingComp.length > 0) {
+      COMPANY_CODE = existingComp[0].company_code;
+      if (!COMPANY_CODE.startsWith("WS-")) {
+        COMPANY_CODE = "WS-" + crypto.randomBytes(3).toString("hex").toUpperCase();
+        await pool.query("UPDATE companies SET company_code = ? WHERE id = ?", [COMPANY_CODE, existingComp[0].id]);
+      }
+    } else {
+      COMPANY_CODE = "WS-" + crypto.randomBytes(3).toString("hex").toUpperCase();
+      await pool.query(
+        "INSERT INTO companies (company_code, name) VALUES (?, ?)",
+        [COMPANY_CODE, COMPANY_NAME]
+      );
+    }
 
     const [comps] = await pool.query("SELECT id FROM companies WHERE company_code = ?", [COMPANY_CODE]);
     const companyId = comps[0]?.id;
@@ -47,7 +59,7 @@ const ADMIN_PASS = "Admin@123";
     }
 
     console.log("\n--- Web login credentials ---");
-    console.log("Company Code:", COMPANY_CODE);
+    console.log("Workspace ID:", COMPANY_CODE);
     console.log("Username:    ", ADMIN_USER);
     console.log("Password:    ", ADMIN_PASS);
     console.log("URL:          http://localhost:3000");

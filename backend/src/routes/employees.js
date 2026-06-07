@@ -92,41 +92,6 @@ router.post("/", auth, roles("ADMIN"), async (req, res) => {
   }
 });
 
-// Generate 100 Fake Employees for Testing
-router.post("/generate-bulk", auth, roles("ADMIN"), async (req, res) => {
-  try {
-    const companyId = req.user.company_id;
-    
-    const [compRows] = await pool.query("SELECT subscription_plan, settings FROM companies WHERE id = ?", [companyId]);
-    const plan = compRows[0]?.subscription_plan || "FREE";
-    let features = {};
-    try {
-      features = typeof compRows[0]?.settings === "string"
-        ? JSON.parse(compRows[0].settings)
-        : (compRows[0]?.settings || {});
-    } catch { /* use empty */ }
-    if (plan !== "YEARLY" || !features.bulk_employee_gen) {
-      return res.status(403).json({ message: "Bulk generation requires the Yearly plan. Upgrade to unlock this feature." });
-    }
-
-    const bulkPass = "Test@123";
-    const hash = await bcrypt.hash(bulkPass, 10);
-    const values = [];
-    for (let i = 1; i <= 100; i++) {
-      const code = `TEST-${Math.floor(Math.random() * 10000)}-${i}`;
-      values.push([companyId, code, `Test Employee ${i}`, 'Quality Tester', hash]);
-    }
-    await pool.query(
-      "INSERT IGNORE INTO employees (company_id, emp_code, name, designation, password_hash) VALUES ?",
-      [values]
-    );
-    res.json({ message: "100 Fake employees generated successfully!" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
 // Toggle employee status (Deactivate / Activate)
 router.put("/:id/status", auth, roles("ADMIN"), async (req, res) => {
   try {

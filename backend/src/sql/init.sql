@@ -152,14 +152,3 @@ CREATE TABLE IF NOT EXISTS ot_settings (
   FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
   UNIQUE(company_id)
 );
-
--- 11. Default Data Insert karein (Taaki aap turant test kar sakein)
-INSERT IGNORE INTO companies (id, company_code, name) VALUES (1, 'CMP-01', 'Default Company');
-
--- Password: Admin@123
-INSERT IGNORE INTO users (company_id, username, password_hash, role)
-VALUES (1, 'admin', '$2a$10$wyDpV0t39sTX/HhUpScgDuSZFR3Nv/JCTe3dJkeKIlHN5Al1tJxXq', 'ADMIN');
-
--- Default OT Settings
-INSERT IGNORE INTO ot_settings (company_id, standard_hours, ot_rate_multiplier, ot_applicable_from_minutes, max_daily_ot_minutes, weekly_off_days)
-VALUES (1, 9.0, 1.5, 540, 180, 'Saturday,Sunday');
