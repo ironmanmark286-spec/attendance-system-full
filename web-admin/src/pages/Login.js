@@ -22,7 +22,11 @@ export default function Login({ theme, onToggleTheme, animationsEnabled, onToggl
 
   useEffect(() => {
     const saved = localStorage.getItem("workspaceId");
-    if (saved) setCompanyCode(saved);
+    if (saved && saved.startsWith("WS-")) {
+      setCompanyCode(saved);
+    } else {
+      localStorage.removeItem("workspaceId");
+    }
   }, []);
 
   const copyWorkspaceId = (id) => {

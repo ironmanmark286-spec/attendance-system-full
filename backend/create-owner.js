@@ -14,28 +14,21 @@ async function createOwner() {
   try {
     const ownerCompanyName = "Attendance Platform Owner";
     const ownerUsername = "superadmin";
-    // Dynamically generate a random password every time you run this to avoid hardcoded credentials
-    const ownerPasswordPlain = "Admin@" + crypto.randomBytes(4).toString("hex").toUpperCase(); 
+    // Fixed password taaki type karne mein galti na ho
+    const ownerPasswordPlain = "Super@Admin1"; 
 
     // 1. Create or Find Owner Company
     console.log("Setting up owner company...");
     let [compRows] = await connection.query("SELECT id, company_code FROM companies WHERE name = ?", [ownerCompanyName]);
     let compId;
-    let workspaceId;
+    let workspaceId = "WS-ADMIN"; // Hamesha fixed rahega
 
     if (compRows.length > 0) {
       compId = compRows[0].id;
-      workspaceId = compRows[0].company_code;
-      // Update old format (like AK-OWNER) to new WS- format automatically
-      if (!workspaceId.startsWith("WS-")) {
-        workspaceId = "WS-" + crypto.randomBytes(3).toString("hex").toUpperCase();
-        await connection.query("UPDATE companies SET company_code = ? WHERE id = ?", [workspaceId, compId]);
-        console.log("Updated old company code to new Workspace ID format.");
-      } else {
-        console.log("Owner company already exists.");
-      }
+      // Agar pehle kuch aur tha, toh usko update karke WS-ADMIN kar do
+      await connection.query("UPDATE companies SET company_code = ? WHERE id = ?", [workspaceId, compId]);
+      console.log("Owner company updated to WS-ADMIN.");
     } else {
-      workspaceId = "WS-" + crypto.randomBytes(3).toString("hex").toUpperCase();
       // Create company with lifetime active subscription just in case
       const [insertComp] = await connection.query(
         `INSERT INTO companies (company_code, name, subscription_plan, subscription_status, subscription_ends_at) 
