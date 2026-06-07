@@ -5,11 +5,14 @@ const pool = require("../db");
 
 const router = express.Router();
 
-// Initialize Razorpay
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET,
-});
+// Razorpay is initialized lazily because env vars may be missing at server startup
+function getRazorpay() {
+  const key_id = process.env.RAZORPAY_KEY_ID;
+  const key_secret = process.env.RAZORPAY_KEY_SECRET;
+  if (!key_id || !key_secret) return null;
+  return new Razorpay({ key_id, key_secret });
+}
+
 
 router.post("/create-order", async (req, res) => {
   try {
@@ -30,9 +33,15 @@ router.post("/create-order", async (req, res) => {
       receipt: `receipt_${req.user.company_id}_${Date.now()}`
     };
 
+    const razorpay = getRazorpay();
+    if (!razorpay) {
+      return res.status(500).json({ message: "Razorpay keys not configured" });
+    }
+
     const order = await razorpay.orders.create(options);
     
     if (!order) {
+
       return res.status(500).json({ message: "Failed to create order" });
     }
 
@@ -57,9 +66,13 @@ router.post("/verify-payment", async (req, res) => {
     } = req.body;
 
     const secret = process.env.RAZORPAY_KEY_SECRET;
+    if (!secret) {
+      return res.status(500).json({ message: "Razorpay secret not configured" });
+    }
 
     // Verify signature
     const shasum = crypto.createHmac("sha256", secret);
+
     shasum.update(`${razorpay_order_id}|${razorpay_payment_id}`);
     const digest = shasum.digest("hex");
 
@@ -69,9 +82,25 @@ router.post("/verify-payment", async (req, res) => {
 
     // Payment is successful, update subscription
     const compId = req.user.company_id;
-    
+
+    // Idempotency: prevent multiple extensions for the same Razorpay payment
+    // Requires a table: processed_payments( id, company_id, razorpay_payment_id, created_at )
+    const [already] = await pool.query(
+      "SELECT id FROM processed_payments WHERE company_id = ? AND razorpay_payment_id = ? LIMIT 1",
+      [compId, razorpay_payment_id]
+    );
+    if (already.length) {
+      return res.json({
+        message: "Payment already processed",
+        plan,
+        endsAt: null,
+        bonusMonthAdded: false
+      });
+    }
+
     const [rows] = await pool.query("SELECT first_purchase_done FROM companies WHERE id = ?", [compId]);
     const firstPurchase = rows[0]?.first_purchase_done === 0;
+
 
     const now = new Date();
     const subscriptionEndsAt = new Date(now);
@@ -90,10 +119,11 @@ router.post("/verify-payment", async (req, res) => {
        SET subscription_plan = ?, 
            subscription_status = 'ACTIVE', 
            subscription_ends_at = ?,
-           first_purchase_done = TRUE
+           first_purchase_done = 1
        WHERE id = ?`,
       [plan, subscriptionEndsAt, compId]
     );
+
 
     res.json({
       message: "Payment successful and subscription updated!",
