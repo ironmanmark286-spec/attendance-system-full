@@ -15,7 +15,15 @@ const billingRoutes = require("./routes/billing");
 const auth = require("./middleware/auth");
 
 const app = express();
-app.use(cors());
+
+const corsOrigin = process.env.CORS_ORIGIN;
+app.use(
+  cors(
+    corsOrigin
+      ? { origin: corsOrigin.split(",").map((o) => o.trim()), credentials: true }
+      : undefined
+  )
+);
 app.use(express.json());
 
 // Serve uploads folder statically
@@ -29,7 +37,7 @@ app.use("/api/leaves", leavesRoutes);
 app.use("/api/payslips", payslipRoutes);
 app.use("/api/notices", noticesRoutes);
 app.use("/api/ot-settings", otSettingsRoutes);
-app.use("/api/ai", aiRoutes);
+app.use("/api/ai", auth, aiRoutes);
 app.use("/api/billing", auth, billingRoutes);
 
 // --- Serve Frontend on Render ---

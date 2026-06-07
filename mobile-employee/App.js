@@ -23,8 +23,21 @@ const API_URL = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl}/api`;
 
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 10000 // 10 seconds timeout to prevent hanging
+  timeout: 10000
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 402 || error.response?.status === 403) {
+      const msg = error.response?.data?.message;
+      if (msg && (msg.includes("expired") || msg.includes("subscription"))) {
+        Alert.alert("Workspace Inactive", msg + "\n\nPlease contact your admin to upgrade the plan.");
+      }
+    }
+    return Promise.reject(error);
+  }
+);
 
 const { width, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const IS_SMALL_SCREEN = SCREEN_HEIGHT < 700;

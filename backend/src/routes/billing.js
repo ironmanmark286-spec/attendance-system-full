@@ -2,10 +2,11 @@ const express = require("express");
 const crypto = require("crypto");
 const Razorpay = require("razorpay");
 const pool = require("../db");
+const PLANS = require("../config/plans");
+const roles = require("../middleware/roles");
 
 const router = express.Router();
 
-// Razorpay is initialized lazily because env vars may be missing at server startup
 function getRazorpay() {
   const key_id = process.env.RAZORPAY_KEY_ID;
   const key_secret = process.env.RAZORPAY_KEY_SECRET;
@@ -13,44 +14,48 @@ function getRazorpay() {
   return new Razorpay({ key_id, key_secret });
 }
 
-
-router.post("/create-order", async (req, res) => {
+router.post("/create-order", roles("ADMIN", "HR", "SUPERVISOR"), async (req, res) => {
   try {
     const { plan } = req.body;
-    
-    let amount = 0;
-    if (plan === "MONTHLY") {
-      amount = 499 * 100; // Razorpay expects amount in paise
-    } else if (plan === "YEARLY") {
-      amount = 1999 * 100;
-    } else {
+    const planConfig = PLANS[plan];
+
+    if (!planConfig) {
       return res.status(400).json({ message: "Invalid plan selected" });
     }
 
-    const options = {
-      amount,
-      currency: "INR",
-      receipt: `receipt_${req.user.company_id}_${Date.now()}`
-    };
-
     const razorpay = getRazorpay();
     if (!razorpay) {
-      return res.status(500).json({ message: "Razorpay keys not configured" });
+      return res.status(500).json({ message: "Payment gateway not configured. Contact support." });
     }
 
+    const options = {
+      amount: planConfig.amount,
+      currency: "INR",
+      receipt: `receipt_${req.user.company_id}_${Date.now()}`,
+      notes: {
+        plan,
+        company_id: String(req.user.company_id),
+      },
+    };
+
     const order = await razorpay.orders.create(options);
-    
+
     if (!order) {
       return res.status(500).json({ message: "Failed to create order" });
     }
 
+    await pool.query(
+      `INSERT INTO billing_orders (company_id, razorpay_order_id, plan, amount, status)
+       VALUES (?, ?, ?, ?, 'PENDING')`,
+      [req.user.company_id, order.id, plan, planConfig.amount]
+    );
 
     res.json({
       orderId: order.id,
       amount: order.amount,
       currency: order.currency,
-      // Frontend needs Razorpay Key ID (public key). Never expose secret.
-      rzpKey: process.env.RAZORPAY_KEY_ID || null
+      plan,
+      rzpKey: process.env.RAZORPAY_KEY_ID,
     });
   } catch (error) {
     console.error("Order creation error:", error);
@@ -58,69 +63,71 @@ router.post("/create-order", async (req, res) => {
   }
 });
 
-router.post("/verify-payment", async (req, res) => {
+router.post("/verify-payment", roles("ADMIN", "HR", "SUPERVISOR"), async (req, res) => {
   try {
-    const {
-      razorpay_order_id,
-      razorpay_payment_id,
-      razorpay_signature,
-      plan
-    } = req.body;
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !plan) {
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return res.status(400).json({ message: "Missing required payment fields" });
     }
 
-
     const secret = process.env.RAZORPAY_KEY_SECRET;
     if (!secret) {
-      return res.status(500).json({ message: "Razorpay secret not configured" });
+      return res.status(500).json({ message: "Payment gateway not configured" });
     }
 
-    // Verify signature
     const shasum = crypto.createHmac("sha256", secret);
-
     shasum.update(`${razorpay_order_id}|${razorpay_payment_id}`);
     const digest = shasum.digest("hex");
 
     if (digest !== razorpay_signature) {
-      return res.status(400).json({ message: "Transaction not legit!" });
+      return res.status(400).json({ message: "Payment verification failed. Invalid signature." });
     }
 
-    // Payment is successful, update subscription
     const compId = req.user.company_id;
 
-    // Idempotency: prevent multiple extensions for the same Razorpay payment
-    // Requires a table: processed_payments( id, company_id, razorpay_payment_id, created_at )
     const [already] = await pool.query(
       "SELECT id FROM processed_payments WHERE company_id = ? AND razorpay_payment_id = ? LIMIT 1",
       [compId, razorpay_payment_id]
     );
     if (already.length) {
-      return res.json({
-        message: "Payment already processed",
-        plan,
-        endsAt: null,
-        bonusMonthAdded: false
-      });
+      return res.json({ message: "Payment already processed", bonusMonthAdded: false });
     }
 
-    const [rows] = await pool.query("SELECT first_purchase_done FROM companies WHERE id = ?", [compId]);
+    const [orderRows] = await pool.query(
+      "SELECT plan, amount, status FROM billing_orders WHERE razorpay_order_id = ? AND company_id = ? LIMIT 1",
+      [razorpay_order_id, compId]
+    );
+
+    if (!orderRows.length) {
+      return res.status(400).json({ message: "Order not found. Please create a new order." });
+    }
+
+    const orderRecord = orderRows[0];
+    if (orderRecord.status === "COMPLETED") {
+      return res.json({ message: "Payment already processed", bonusMonthAdded: false });
+    }
+
+    const plan = orderRecord.plan;
+    const planConfig = PLANS[plan];
+    if (!planConfig || orderRecord.amount !== planConfig.amount) {
+      return res.status(400).json({ message: "Order amount mismatch. Contact support." });
+    }
+
+    const [rows] = await pool.query("SELECT first_purchase_done, subscription_ends_at FROM companies WHERE id = ?", [compId]);
     const firstPurchase = rows[0]?.first_purchase_done === 0;
 
-
     const now = new Date();
-    const subscriptionEndsAt = new Date(now);
+    let subscriptionEndsAt = new Date(now);
 
-    let monthsToAdd = plan === "YEARLY" ? 12 : 1;
+    if (rows[0]?.subscription_ends_at && new Date(rows[0].subscription_ends_at) > now) {
+      subscriptionEndsAt = new Date(rows[0].subscription_ends_at);
+    }
 
-    // Add 1 free month if it's their very first purchase
+    let monthsToAdd = planConfig.months;
     if (firstPurchase) {
       monthsToAdd += 1;
     }
-
-
-
 
     subscriptionEndsAt.setMonth(subscriptionEndsAt.getMonth() + monthsToAdd);
 
@@ -134,12 +141,23 @@ router.post("/verify-payment", async (req, res) => {
       [plan, subscriptionEndsAt, compId]
     );
 
+    await pool.query(
+      "UPDATE billing_orders SET status = 'COMPLETED' WHERE razorpay_order_id = ? AND company_id = ?",
+      [razorpay_order_id, compId]
+    );
+
+    await pool.query(
+      "INSERT INTO processed_payments (company_id, razorpay_payment_id, razorpay_order_id, plan) VALUES (?, ?, ?, ?)",
+      [compId, razorpay_payment_id, razorpay_order_id, plan]
+    );
 
     res.json({
-      message: "Payment successful and subscription updated!",
+      message: firstPurchase
+        ? "Payment successful! Subscription activated with 1 bonus month free!"
+        : "Payment successful! Subscription activated!",
       plan,
       endsAt: subscriptionEndsAt,
-      bonusMonthAdded: firstPurchase
+      bonusMonthAdded: firstPurchase,
     });
   } catch (error) {
     console.error("Payment verification error:", error);
@@ -148,21 +166,34 @@ router.post("/verify-payment", async (req, res) => {
 });
 
 router.get("/status", async (req, res) => {
-    try {
-        const compId = req.user.company_id;
-        const [rows] = await pool.query(
-            "SELECT subscription_plan, subscription_status, trial_ends_at, subscription_ends_at, first_purchase_done FROM companies WHERE id = ?",
-            [compId]
-        );
-        
-        if (!rows.length) {
-            return res.status(404).json({ message: "Company not found" });
-        }
-        
-        res.json(rows[0]);
-    } catch (error) {
-        res.status(500).json({ message: "Failed to fetch subscription status" });
+  try {
+    const compId = req.user.company_id;
+    const [rows] = await pool.query(
+      "SELECT subscription_plan, subscription_status, trial_ends_at, subscription_ends_at, first_purchase_done FROM companies WHERE id = ?",
+      [compId]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({ message: "Company not found" });
     }
+
+    const status = rows[0];
+    const now = new Date();
+
+    if (status.subscription_status === "TRIAL" && status.trial_ends_at) {
+      const daysLeft = Math.max(0, Math.ceil((new Date(status.trial_ends_at) - now) / (1000 * 60 * 60 * 24)));
+      status.trial_days_left = daysLeft;
+    }
+
+    if (status.subscription_status === "ACTIVE" && status.subscription_ends_at) {
+      const daysLeft = Math.max(0, Math.ceil((new Date(status.subscription_ends_at) - now) / (1000 * 60 * 60 * 24)));
+      status.subscription_days_left = daysLeft;
+    }
+
+    res.json(status);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch subscription status" });
+  }
 });
 
 module.exports = router;

@@ -2,13 +2,17 @@
 node_modules/
 **/node_modules/
 
-# Environment & secrets
+# Environment & secrets (NEVER commit real keys)
 .env
 .env.local
 .env.*.local
 backend/.env
 web-admin/.env
 web-admin/.env.local
+# Allow .env.example templates (no real secrets)
+!.env.example
+!backend/.env.example
+!web-admin/.env.example
 
 # Local MySQL data (do not upload)
 .mysql-data/
@@ -51,3 +55,6 @@ coverage/
 
 .vercel
 .env*
+!.env.example
+!backend/.env.example
+!web-admin/.env.example

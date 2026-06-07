@@ -64,8 +64,11 @@ router.post("/", auth, roles("ADMIN"), async (req, res) => {
     
     const [compRows] = await pool.query("SELECT subscription_plan FROM companies WHERE id = ?", [req.user.company_id]);
     const plan = compRows[0]?.subscription_plan || 'FREE';
-    if (plan !== 'YEARLY' && count >= 50) {
-      return res.status(403).json({ message: "Employee limit (50) reached on Monthly plan. Upgrade to Yearly plan for unlimited employees." });
+    if (plan !== "YEARLY" && count >= 50) {
+      return res.status(403).json({
+        message: "Employee limit reached! Monthly/Trial plan allows max 50 employees. Upgrade to Yearly plan for unlimited employees.",
+        code: "EMPLOYEE_LIMIT_REACHED",
+      });
     }
 
     const [existing] = await pool.query(

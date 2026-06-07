@@ -38,7 +38,7 @@ export default function Login({ theme, onToggleTheme, animationsEnabled, onToggl
         }
         localStorage.setItem("token", data.token);
         localStorage.setItem("role", data.role);
-        window.location.href = "/dashboard";
+        window.location.href = data.subscriptionExpired ? "/billing" : "/dashboard";
       }
     } catch (err) {
       setMsg(err?.response?.data?.message || (isRegistering ? "Registration failed." : (isResetting ? "Reset failed." : "Authentication failed.")));

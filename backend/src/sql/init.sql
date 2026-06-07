@@ -111,7 +111,31 @@ CREATE TABLE IF NOT EXISTS payslips (
   FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
 );
 
--- 10. OT Settings Table (Overtime configuration per company)
+-- 10. Billing Orders Table (Razorpay order tracking - plan verified server-side)
+CREATE TABLE IF NOT EXISTS billing_orders (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  company_id INT NOT NULL,
+  razorpay_order_id VARCHAR(100) UNIQUE NOT NULL,
+  plan ENUM('MONTHLY', 'YEARLY') NOT NULL,
+  amount INT NOT NULL,
+  status ENUM('PENDING', 'COMPLETED') DEFAULT 'PENDING',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+);
+
+-- 11. Processed Payments Table (prevent duplicate payment processing)
+CREATE TABLE IF NOT EXISTS processed_payments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  company_id INT NOT NULL,
+  razorpay_payment_id VARCHAR(100) NOT NULL,
+  razorpay_order_id VARCHAR(100) NOT NULL,
+  plan ENUM('MONTHLY', 'YEARLY') NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_payment (company_id, razorpay_payment_id)
+);
+
+-- 12. OT Settings Table (Overtime configuration per company)
 CREATE TABLE IF NOT EXISTS ot_settings (
   id INT AUTO_INCREMENT PRIMARY KEY,
   company_id INT NOT NULL,

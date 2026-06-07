@@ -40,6 +40,7 @@
   --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
 }
 
+html.dark-mode,
 body.dark-mode {
   --bg-primary: #111827;
   --bg-secondary: #1f2937;
@@ -48,6 +49,17 @@ body.dark-mode {
   --text-secondary: #d1d5db;
   --text-tertiary: #9ca3af;
   --border-color: #374151;
+}
+
+html.light-mode,
+body.light-mode {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f9fafb;
+  --bg-tertiary: #f3f4f6;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --text-tertiary: #9ca3af;
+  --border-color: #e5e7eb;
 }
 
 * {

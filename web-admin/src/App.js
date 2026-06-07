@@ -16,19 +16,20 @@ const GlobalDesignOverrides = () => (
     
     :root {
       font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif !important;
-      /* Map legacy/global variable names to the theme variables used in styles-pro.css */
-      --bg-app: var(--bg-secondary);
-      --bg-card: var(--bg-primary);
-      --border: var(--border-color);
     }
     
     body {
-      background-color: var(--bg-app);
       background-image: 
         radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.08) 0%, transparent 40%), 
         radial-gradient(circle at 100% 100%, rgba(168, 85, 247, 0.08) 0%, transparent 40%) !important;
       background-attachment: fixed;
       letter-spacing: -0.01em;
+    }
+
+    html.theme-dark body, html.dark-mode body {
+      background-image: 
+        radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.12) 0%, transparent 40%), 
+        radial-gradient(circle at 100% 100%, rgba(139, 92, 246, 0.1) 0%, transparent 40%) !important;
     }
 
     /* Floating Layout Architecture */
@@ -166,21 +167,35 @@ const GlobalDesignOverrides = () => (
 
 export default function App() {
   const [theme, setTheme] = useState(localStorage.getItem("theme") || "dark");
+
+  useEffect(() => {
+    const savedAccent = localStorage.getItem("accentColor");
+    if (savedAccent) {
+      [document.documentElement, document.body].forEach((el) => {
+        el.style.setProperty("--primary", savedAccent);
+        el.style.setProperty("--primary-hover", savedAccent);
+        el.style.setProperty("--primary-bg", `${savedAccent}26`);
+      });
+    }
+  }, []);
   const [animationsEnabled, setAnimationsEnabled] = useState(() => {
     const v = localStorage.getItem('animationsEnabled');
     return v === null ? true : v === 'true';
   });
 
   useEffect(() => {
-    // support multiple class-name conventions used across stylesheets
-    // remove any existing theme classes then add both variants for compatibility
-    document.body.classList.remove("dark-mode", "light-mode", "theme-dark", "theme-light");
+    const html = document.documentElement;
+    const body = document.body;
+    const classes = ["dark-mode", "light-mode", "theme-dark", "theme-light"];
+    html.classList.remove(...classes);
+    body.classList.remove(...classes);
+
     if (theme === "light") {
-      document.body.classList.add("light-mode");
-      document.body.classList.add("theme-light");
+      html.classList.add("light-mode", "theme-light");
+      body.classList.add("light-mode", "theme-light");
     } else {
-      document.body.classList.add("dark-mode");
-      document.body.classList.add("theme-dark");
+      html.classList.add("dark-mode", "theme-dark");
+      body.classList.add("dark-mode", "theme-dark");
     }
     localStorage.setItem("theme", theme);
   }, [theme]);

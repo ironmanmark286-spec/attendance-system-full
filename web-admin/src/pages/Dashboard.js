@@ -116,9 +116,15 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
   const [liveTime, setLiveTime] = useState(new Date());
   const [standardWorkHours, setStandardWorkHours] = useState(9);
   const [enableOT, setEnableOT] = useState(true);
+  const [subscription, setSubscription] = useState(null);
 
   useEffect(() => {
-    document.documentElement.style.setProperty('--primary', accentColor);
+    const targets = [document.documentElement, document.body];
+    targets.forEach((el) => {
+      el.style.setProperty('--primary', accentColor);
+      el.style.setProperty('--primary-hover', accentColor);
+      el.style.setProperty('--primary-bg', `${accentColor}26`);
+    });
     localStorage.setItem('accentColor', accentColor);
   }, [accentColor]);
 
@@ -152,15 +158,17 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
   const loadData = async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
-      const [attRes, statsRes, empRes, leavesRes, payslipsRes, noticesRes, monthlyRes] = await Promise.all([
+      const [attRes, statsRes, empRes, leavesRes, payslipsRes, noticesRes, monthlyRes, billingRes] = await Promise.all([
         api.get("/attendance/today").catch(() => ({ data: [] })),
         api.get("/attendance/stats/today").catch(() => ({ data: { total: 0, present: 0, late: 0, absent: 0, companyName: "Error Loading", companyCode: "", adminName: "Admin" } })),
         api.get("/employees").catch(() => ({ data: [] })),
         api.get("/leaves").catch(() => ({ data: [] })),
         api.get("/payslips").catch(() => ({ data: [] })),
         api.get("/notices").catch(() => ({ data: [] })),
-        api.get(`/attendance/summary/monthly?month=${month}`).catch(() => ({ data: [] }))
+        api.get(`/attendance/summary/monthly?month=${month}`).catch(() => ({ data: [] })),
+        api.get("/billing/status").catch(() => ({ data: null }))
       ]);
+      if (billingRes.data) setSubscription(billingRes.data);
       setRows(attRes.data);
       setStats(statsRes.data);
       setEmployees(empRes.data);
@@ -234,7 +242,14 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
       setNewEmp({ empCode: "", name: "", password: "", designation: "" });
       loadData();
     } catch (err) {
-      alert(err.response?.data?.message || "Failed to add employee");
+      const msg = err.response?.data?.message || "Failed to add employee";
+      if (err.response?.data?.code === "EMPLOYEE_LIMIT_REACHED") {
+        if (window.confirm(msg + "\n\nWould you like to upgrade to Yearly plan for unlimited employees?")) {
+          window.location.href = "/billing";
+        }
+      } else {
+        alert(msg);
+      }
     }
   };
 
@@ -634,6 +649,19 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
 
       {/* Main Content Area */}
       <main className="main-content">
+
+        {subscription?.subscription_status === "TRIAL" && subscription?.trial_days_left <= 7 && (
+          <div style={{ background: 'var(--warning-bg)', color: 'var(--warning-text)', padding: '14px 20px', borderRadius: 16, marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, border: '1px solid var(--warning)' }}>
+            <span>Free trial ends in <strong>{subscription.trial_days_left} days</strong>. Upgrade to keep your workspace active.</span>
+            <button className="btn btn-primary" style={{ padding: '8px 20px', fontSize: 13 }} onClick={() => window.location.href = '/billing'}>Upgrade Now</button>
+          </div>
+        )}
+
+        {subscription?.subscription_plan !== "YEARLY" && employees.length >= 45 && (
+          <div style={{ background: 'var(--primary-bg)', color: 'var(--text-main)', padding: '12px 20px', borderRadius: 12, marginBottom: 16, border: '1px solid var(--primary)', fontSize: 14 }}>
+            Employee count: <strong>{employees.length}/50</strong> (Monthly/Trial limit). <button style={{ background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => window.location.href = '/billing'}>Upgrade to Yearly</button> for unlimited.
+          </div>
+        )}
         
         {/* Topbar */}
         <header className="topbar">

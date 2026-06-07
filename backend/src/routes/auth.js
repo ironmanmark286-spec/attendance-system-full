@@ -76,7 +76,11 @@ router.post("/login", async (req, res) => {
         { expiresIn: "1d" }
       );
 
-      return res.json({ token, role: user.role });
+      return res.json({
+        token,
+        role: user.role,
+        subscriptionExpired: isExpired && user.role !== "SUPERADMIN",
+      });
     }
 
     [rows] = await pool.query(

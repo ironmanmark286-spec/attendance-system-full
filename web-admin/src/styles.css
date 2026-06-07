@@ -40,6 +40,7 @@
   --glass-blur: blur(20px);
 }
 
+html.theme-dark,
 body.theme-dark {
   /* Ultra-Premium Dark Mode Palette (Cyber/Neon/Glass) */
   --bg-app: #060913;
@@ -117,7 +118,9 @@ body::after {
   opacity: 0.2;
   animation-delay: -10s;
 }
+html.theme-dark body::before,
 body.theme-dark::before { opacity: 0.3; }
+html.theme-dark body::after,
 body.theme-dark::after { background: #3b82f6; opacity: 0.2; }
 
 @keyframes float {
