@@ -7,11 +7,13 @@ CREATE TABLE IF NOT EXISTS companies (
   id INT AUTO_INCREMENT PRIMARY KEY,
   company_code VARCHAR(50) UNIQUE NOT NULL,
   name VARCHAR(100) NOT NULL,
+  admin_email VARCHAR(255) NULL UNIQUE,
   trial_ends_at TIMESTAMP NULL,
   subscription_plan ENUM('FREE', 'MONTHLY', 'YEARLY') DEFAULT 'FREE',
   subscription_status ENUM('TRIAL', 'ACTIVE', 'EXPIRED') DEFAULT 'TRIAL',
   subscription_ends_at TIMESTAMP NULL,
   first_purchase_done BOOLEAN DEFAULT FALSE,
+  settings JSON NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

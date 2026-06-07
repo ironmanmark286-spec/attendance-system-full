@@ -60,7 +60,9 @@ import {
   Receipt,
   Key,
   Sparkles,
-  CreditCard
+  CreditCard,
+  Copy,
+  Building2
 } from 'lucide-react';
 import ParallaxBlobs from "../components/ParallaxBlobs";
 import ThemeToggle from "../components/ThemeToggle";
@@ -117,6 +119,8 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
   const [standardWorkHours, setStandardWorkHours] = useState(9);
   const [enableOT, setEnableOT] = useState(true);
   const [subscription, setSubscription] = useState(null);
+  const [workspace, setWorkspace] = useState(null);
+  const [copiedWsId, setCopiedWsId] = useState(false);
 
   useEffect(() => {
     const targets = [document.documentElement, document.body];
@@ -158,7 +162,7 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
   const loadData = async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
-      const [attRes, statsRes, empRes, leavesRes, payslipsRes, noticesRes, monthlyRes, billingRes] = await Promise.all([
+      const [attRes, statsRes, empRes, leavesRes, payslipsRes, noticesRes, monthlyRes, billingRes, workspaceRes] = await Promise.all([
         api.get("/attendance/today").catch(() => ({ data: [] })),
         api.get("/attendance/stats/today").catch(() => ({ data: { total: 0, present: 0, late: 0, absent: 0, companyName: "Error Loading", companyCode: "", adminName: "Admin" } })),
         api.get("/employees").catch(() => ({ data: [] })),
@@ -166,9 +170,11 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
         api.get("/payslips").catch(() => ({ data: [] })),
         api.get("/notices").catch(() => ({ data: [] })),
         api.get(`/attendance/summary/monthly?month=${month}`).catch(() => ({ data: [] })),
-        api.get("/billing/status").catch(() => ({ data: null }))
+        api.get("/billing/status").catch(() => ({ data: null })),
+        api.get("/auth/workspace").catch(() => ({ data: null }))
       ]);
       if (billingRes.data) setSubscription(billingRes.data);
+      if (workspaceRes.data) setWorkspace(workspaceRes.data);
       setRows(attRes.data);
       setStats(statsRes.data);
       setEmployees(empRes.data);
@@ -1308,9 +1314,11 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                   <p style={{ color: 'var(--text-muted)', fontSize: 16, marginTop: 4, fontWeight: 500 }}>Manage workforce access.</p>
                 </div>
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                  <button className="btn btn-secondary" style={{ padding: '14px 24px', fontSize: 16 }} onClick={handleGenerateBulkEmployees} disabled={loading}>
-                    <Users size={20} /> Generate 100 Employees
-                  </button>
+                  {workspace?.features?.bulk_employee_gen && (
+                    <button className="btn btn-secondary" style={{ padding: '14px 24px', fontSize: 16 }} onClick={handleGenerateBulkEmployees} disabled={loading}>
+                      <Users size={20} /> Generate 100 Employees
+                    </button>
+                  )}
                   <button className="btn" style={{ padding: '14px 24px', fontSize: 16 }} onClick={() => setIsAddEmpModalOpen(true)}>
                     <UserPlus size={20} /> Onboard New Employee
                   </button>
@@ -1382,6 +1390,43 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: 24 }}>
+
+                {/* Workspace Identity */}
+                <div className="card card-entrance" style={{ gridColumn: '1 / -1' }}>
+                  <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 10 }}><Building2 size={20} color="var(--primary)"/> Your Private Workspace</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
+                    <div style={{ padding: 16, background: 'var(--bg-input)', borderRadius: 12, border: '1px solid var(--border)' }}>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>Workspace ID</div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <span style={{ fontSize: 20, fontWeight: 900, color: 'var(--primary)', letterSpacing: 1 }}>{workspace?.workspaceId || stats.companyCode}</span>
+                        <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => {
+                          navigator.clipboard.writeText(workspace?.workspaceId || stats.companyCode);
+                          setCopiedWsId(true);
+                          setTimeout(() => setCopiedWsId(false), 2000);
+                        }}>
+                          <Copy size={14} /> {copiedWsId ? 'Copied!' : 'Copy'}
+                        </button>
+                      </div>
+                      <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>Share with employees for mobile app login</p>
+                    </div>
+                    <div style={{ padding: 16, background: 'var(--bg-input)', borderRadius: 12, border: '1px solid var(--border)' }}>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>Company</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-main)' }}>{workspace?.companyName || stats.companyName}</div>
+                      {workspace?.adminEmail && <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>{workspace.adminEmail}</div>}
+                    </div>
+                    <div style={{ padding: 16, background: 'var(--bg-input)', borderRadius: 12, border: '1px solid var(--border)' }}>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>Active Features</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                        {workspace?.features && Object.entries(workspace.features).filter(([, v]) => v).map(([key]) => (
+                          <span key={key} style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 99, background: 'var(--primary-bg)', color: 'var(--primary)', textTransform: 'capitalize' }}>
+                            {key.replace(/_/g, ' ')}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Theme Settings */}
                 <div className="card card-entrance">
                   <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 10 }}><Sun size={20} color="var(--warning)"/> Appearance</h3>

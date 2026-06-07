@@ -97,10 +97,16 @@ router.post("/generate-bulk", auth, roles("ADMIN"), async (req, res) => {
   try {
     const companyId = req.user.company_id;
     
-    const [compRows] = await pool.query("SELECT subscription_plan FROM companies WHERE id = ?", [companyId]);
-    const plan = compRows[0]?.subscription_plan || 'FREE';
-    if (plan !== 'YEARLY') {
-      return res.status(403).json({ message: "Bulk generation requires the Yearly plan to bypass the 50 employee limit." });
+    const [compRows] = await pool.query("SELECT subscription_plan, settings FROM companies WHERE id = ?", [companyId]);
+    const plan = compRows[0]?.subscription_plan || "FREE";
+    let features = {};
+    try {
+      features = typeof compRows[0]?.settings === "string"
+        ? JSON.parse(compRows[0].settings)
+        : (compRows[0]?.settings || {});
+    } catch { /* use empty */ }
+    if (plan !== "YEARLY" || !features.bulk_employee_gen) {
+      return res.status(403).json({ message: "Bulk generation requires the Yearly plan. Upgrade to unlock this feature." });
     }
 
     const bulkPass = "Test@123";

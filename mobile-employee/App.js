@@ -446,7 +446,7 @@ function AppContent() {
                   <Text style={[styles.inputLabel, { color: palette.textSecondary }]}>Company Code</Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: palette.bgInput, borderRadius: 16, paddingHorizontal: 16, height: IS_SMALL_SCREEN ? 50 : 56, borderWidth: 1, borderColor: palette.border }}>
                     <Ionicons name="business" size={20} color={palette.primary} />
-                    <TextInput style={{ flex: 1, height: '100%', marginLeft: 12, color: palette.textPrimary, fontSize: IS_SMALL_SCREEN ? 15 : 16, fontWeight: '500' }} value={companyCode} onChangeText={setCompanyCode} placeholder="PULSE-01" placeholderTextColor={palette.textSecondary} autoCapitalize="characters" />
+                    <TextInput style={{ flex: 1, height: '100%', marginLeft: 12, color: palette.textPrimary, fontSize: IS_SMALL_SCREEN ? 15 : 16, fontWeight: '500' }} value={companyCode} onChangeText={(t) => setCompanyCode(t.toUpperCase())} placeholder="WS-A7X9K2" placeholderTextColor={palette.textSecondary} autoCapitalize="characters" />
                   </View>
                 </View>
 
@@ -910,24 +910,59 @@ function AppContent() {
               
               <View style={[styles.profileCard, { backgroundColor: palette.bgCard, borderColor: palette.border, shadowColor: palette.shadow }]}>
                 <LinearGradient colors={['#6366f1', '#a855f7']} style={styles.profileAvatar}>
-                  <Text style={{ fontSize: 36, fontWeight: '800', color: '#fff' }}>{profile.name ? profile.name.charAt(0) : "E"}</Text>
+                  <Text style={{ fontSize: 36, fontWeight: '800', color: '#fff' }}>{profile.name ? profile.name.charAt(0).toUpperCase() : "E"}</Text>
                 </LinearGradient>
                 <Text style={[styles.profileName, { color: palette.textPrimary }]}>{profile.name}</Text>
-                <Text style={[styles.profileCode, { color: palette.textSecondary }]}>{profile.emp_code}</Text>
+                <Text style={[styles.profileCode, { color: palette.primary, fontWeight: '700', marginTop: 4, backgroundColor: 'rgba(99, 102, 241, 0.1)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 }]}>{profile.emp_code}</Text>
                 
                 <View style={[styles.divider, { backgroundColor: palette.border, marginVertical: 24, width: '100%' }]} />
                 
                 <View style={styles.profileDetailRow}>
                   <View style={[styles.profileIconBox, { backgroundColor: palette.bgInput }]}><Ionicons name="briefcase" size={18} color={palette.primary} /></View>
-                  <Text style={[styles.profileDetailText, { color: palette.textPrimary }]}>{profile.department || "General Department"}</Text>
+                  <View style={{ marginLeft: 16 }}>
+                    <Text style={{ fontSize: 12, color: palette.textSecondary, fontWeight: '700' }}>Department</Text>
+                    <Text style={[styles.profileDetailText, { color: palette.textPrimary, marginLeft: 0, marginTop: 2 }]}>{profile.department || "General Department"}</Text>
+                  </View>
                 </View>
                 <View style={styles.profileDetailRow}>
                   <View style={[styles.profileIconBox, { backgroundColor: palette.bgInput }]}><Ionicons name="medal" size={18} color={palette.success} /></View>
-                  <Text style={[styles.profileDetailText, { color: palette.textPrimary }]}>{profile.designation || "Employee"}</Text>
+                  <View style={{ marginLeft: 16 }}>
+                    <Text style={{ fontSize: 12, color: palette.textSecondary, fontWeight: '700' }}>Designation</Text>
+                    <Text style={[styles.profileDetailText, { color: palette.textPrimary, marginLeft: 0, marginTop: 2 }]}>{profile.designation || "Employee"}</Text>
+                  </View>
+                </View>
+                <View style={styles.profileDetailRow}>
+                  <View style={[styles.profileIconBox, { backgroundColor: palette.bgInput }]}><Ionicons name="business" size={18} color={palette.warning} /></View>
+                  <View style={{ marginLeft: 16 }}>
+                    <Text style={{ fontSize: 12, color: palette.textSecondary, fontWeight: '700' }}>Workspace ID</Text>
+                    <Text style={[styles.profileDetailText, { color: palette.textPrimary, marginLeft: 0, marginTop: 2 }]}>{companyCode}</Text>
+                  </View>
                 </View>
               </View>
 
-            <TouchableOpacity activeOpacity={0.8} style={[styles.logoutBtn, { backgroundColor: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.2)' }]} onPress={handleLogout}>
+              <Text style={[styles.sectionTitle, { color: palette.textPrimary, marginTop: 8 }]}>Preferences</Text>
+
+              <View style={{ backgroundColor: palette.bgCard, borderRadius: 24, borderWidth: 1, borderColor: palette.border, overflow: 'hidden', marginBottom: 24 }}>
+                <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderBottomColor: palette.border }} onPress={toggleTheme}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <View style={[styles.profileIconBox, { backgroundColor: palette.bgInput }]}><Ionicons name={isDark ? "sunny" : "moon"} size={18} color={palette.textPrimary} /></View>
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: palette.textPrimary, marginLeft: 16 }}>{isDark ? "Light Mode" : "Dark Mode"}</Text>
+                  </View>
+                  <View style={{ width: 40, height: 24, borderRadius: 12, backgroundColor: isDark ? palette.primary : palette.border, justifyContent: 'center', paddingHorizontal: 2 }}>
+                    <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff', alignSelf: isDark ? 'flex-end' : 'flex-start' }} />
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20 }} onPress={() => Linking.openURL('mailto:support@pulsehr.com')}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <View style={[styles.profileIconBox, { backgroundColor: palette.bgInput }]}><Ionicons name="help-buoy" size={18} color={palette.textPrimary} /></View>
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: palette.textPrimary, marginLeft: 16 }}>Help & Support</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={palette.textSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity activeOpacity={0.8} style={[styles.logoutBtn, { backgroundColor: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.2)', marginBottom: 40 }]} onPress={handleLogout}>
                 <Ionicons name="log-out" size={20} color={palette.danger} />
                 <Text style={{ color: palette.danger, fontWeight: '800', fontSize: 16, marginLeft: 10 }}>Sign Out</Text>
               </TouchableOpacity>

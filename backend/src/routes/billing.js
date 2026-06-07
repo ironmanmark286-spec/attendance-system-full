@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const Razorpay = require("razorpay");
 const pool = require("../db");
 const PLANS = require("../config/plans");
+const { getSettingsForPlan } = require("../config/companyDefaults");
 const roles = require("../middleware/roles");
 
 const router = express.Router();
@@ -131,14 +132,17 @@ router.post("/verify-payment", roles("ADMIN", "HR", "SUPERVISOR"), async (req, r
 
     subscriptionEndsAt.setMonth(subscriptionEndsAt.getMonth() + monthsToAdd);
 
+    const planSettings = JSON.stringify(getSettingsForPlan(plan));
+
     await pool.query(
       `UPDATE companies 
        SET subscription_plan = ?, 
            subscription_status = 'ACTIVE', 
            subscription_ends_at = ?,
-           first_purchase_done = 1
+           first_purchase_done = 1,
+           settings = ?
        WHERE id = ?`,
-      [plan, subscriptionEndsAt, compId]
+      [plan, subscriptionEndsAt, planSettings, compId]
     );
 
     await pool.query(
