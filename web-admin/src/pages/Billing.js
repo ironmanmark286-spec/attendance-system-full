@@ -107,6 +107,10 @@ export default function Billing() {
 
   const isExpired = status?.subscription_status === "EXPIRED";
 
+  // Security: show only non-sensitive billing info
+
+
+
   return (
     <div style={styles.container}>
       <div style={styles.header}>
@@ -129,6 +133,7 @@ export default function Billing() {
               {status?.subscription_status || "UNKNOWN"}
             </p>
           </div>
+
           <div>
             <p style={styles.label}>Trial Ends</p>
             <p style={styles.value}>
