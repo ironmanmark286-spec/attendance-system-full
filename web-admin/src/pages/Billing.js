@@ -45,27 +45,14 @@ export default function Billing() {
       const { orderId, amount, currency, rzpKey: backendRzpKey } = orderRes.data;
 
       // 2. Open Razorpay Checkout
-      const rzpKey = backendRzpKey || process.env.REACT_APP_RAZORPAY_KEY_ID || "rzp_test_YourTestKeyHere";
-      
-      // If we are using the mock key, bypass Razorpay UI and directly verify
-      if (rzpKey === "rzp_test_YourTestKeyHere") {
-        alert("TEST MODE: Simulating payment success (Real Razorpay key not found).");
-        try {
-          const verifyRes = await api.post("/billing/verify-payment", {
-            razorpay_order_id: orderId,
-            razorpay_payment_id: "pay_mock_12345",
-            razorpay_signature: "mock_signature",
-            plan: plan
-          });
-          alert(verifyRes.data.message || "Payment Successful!");
-          fetchStatus();
-          navigate("/dashboard");
-        } catch (err) {
-          console.error("Mock verification failed", err);
-          alert("Payment verification failed. Please contact support.");
-        }
+      const rzpKey = backendRzpKey || process.env.REACT_APP_RAZORPAY_KEY_ID;
+      if (!rzpKey) {
+        alert("Razorpay key not configured. Please set RAZORPAY_KEY_ID in backend environment.");
         return;
       }
+
+      
+
 
       const options = {
         key: rzpKey,
@@ -89,9 +76,10 @@ export default function Billing() {
             navigate("/dashboard");
           } catch (err) {
             console.error("Verification failed", err);
-            alert("Payment verification failed. Please contact support.");
+            alert(err?.response?.data?.message || "Payment verification failed. Please contact support.");
           }
         },
+
         prefill: {
           name: "Admin User",
         },

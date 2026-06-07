@@ -41,14 +41,16 @@ router.post("/create-order", async (req, res) => {
     const order = await razorpay.orders.create(options);
     
     if (!order) {
-
       return res.status(500).json({ message: "Failed to create order" });
     }
+
 
     res.json({
       orderId: order.id,
       amount: order.amount,
-      currency: order.currency
+      currency: order.currency,
+      // Frontend needs Razorpay Key ID (public key). Never expose secret.
+      rzpKey: process.env.RAZORPAY_KEY_ID || null
     });
   } catch (error) {
     console.error("Order creation error:", error);
@@ -64,6 +66,11 @@ router.post("/verify-payment", async (req, res) => {
       razorpay_signature,
       plan
     } = req.body;
+
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !plan) {
+      return res.status(400).json({ message: "Missing required payment fields" });
+    }
+
 
     const secret = process.env.RAZORPAY_KEY_SECRET;
     if (!secret) {
@@ -106,11 +113,14 @@ router.post("/verify-payment", async (req, res) => {
     const subscriptionEndsAt = new Date(now);
 
     let monthsToAdd = plan === "YEARLY" ? 12 : 1;
-    
+
     // Add 1 free month if it's their very first purchase
     if (firstPurchase) {
-        monthsToAdd += 1;
+      monthsToAdd += 1;
     }
+
+
+
 
     subscriptionEndsAt.setMonth(subscriptionEndsAt.getMonth() + monthsToAdd);
 
