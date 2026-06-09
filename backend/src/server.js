@@ -12,6 +12,7 @@ const noticesRoutes = require("./routes/notices");
 const otSettingsRoutes = require("./routes/ot-settings");
 const aiRoutes = require("./routes/ai");
 const billingRoutes = require("./routes/billing");
+const ticketRoutes = require("./routes/tickets");
 const auth = require("./middleware/auth");
 
 const app = express();
@@ -39,6 +40,7 @@ app.use("/api/notices", noticesRoutes);
 app.use("/api/ot-settings", otSettingsRoutes);
 app.use("/api/ai", auth, aiRoutes);
 app.use("/api/billing", auth, billingRoutes);
+app.use("/api/tickets", ticketRoutes);
 
 // --- Serve Frontend on Render ---
 // Serve the web-admin build folder if it exists (for Render monolithic deployment)

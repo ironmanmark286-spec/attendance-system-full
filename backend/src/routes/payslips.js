@@ -60,7 +60,7 @@ router.post("/upload", auth, roleGuard("ADMIN", "HR"), upload.single("file"), as
     res.status(201).json({ message: "Payslip uploaded successfully", filePath });
   } catch (err) {
     console.error("Payslip upload error:", err);
-    res.status(500).json({ message: "Server error during upload" });
+    res.status(500).json({ message: "Server error during upload: " + (err.message || err) });
   }
 });
 

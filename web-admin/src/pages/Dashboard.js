@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import api, { BACKEND_URL } from "../api";
 import OTSettings from "./OTSettings";
+import Tickets from "./Tickets";
 import InsightCard from "../components/InsightCard";
 import AnimatedStat from "../components/AnimatedStat";
 import { 
@@ -82,7 +83,6 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
   const [stats, setStats] = useState({ total: 0, present: 0, late: 0, absent: 0, companyName: "Loading...", companyCode: "", adminName: "Admin" });
   const [employees, setEmployees] = useState([]);
   const [leaves, setLeaves] = useState([]);
-  const [tickets, setTickets] = useState([]);
   
   // UI State
   const [searchQuery, setSearchQuery] = useState("");
@@ -495,7 +495,6 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
   const filteredMonthly = useMemo(() => filterBySearch(monthlySummary, searchQuery), [monthlySummary, searchQuery]);
   const filteredEmployees = useMemo(() => filterBySearch(employees, searchQuery), [employees, searchQuery]);
   const filteredLeaves = useMemo(() => filterBySearch(leaves, searchQuery), [leaves, searchQuery]);
-  const filteredTickets = useMemo(() => filterBySearch(tickets, searchQuery), [tickets, searchQuery]);
 
   // Chart Data
   const chartData = [
@@ -1208,59 +1207,7 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
 
           {/* --- HELPDESK TAB --- */}
           {activeNav === "helpdesk" && (
-            <>
-              <div className="page-header">
-                <div>
-                  <h1 className="page-title">Support Helpdesk</h1>
-                  <p style={{ color: 'var(--text-muted)', fontSize: 16, marginTop: 4, fontWeight: 500 }}>Manage employee IT & HR support tickets.</p>
-                </div>
-              </div>
-
-              <div className="table-wrapper">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Ticket ID</th>
-                      <th>Employee Info</th>
-                      <th>Issue Description</th>
-                      <th>Priority</th>
-                      <th>Current Status</th>
-                      <th className="action-header">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredTickets.length === 0 ? (
-                      <tr><td colSpan="6" style={{ textAlign: 'center', padding: '60px', color: 'var(--text-muted)' }}>No active support tickets found.</td></tr>
-                    ) : (
-                      filteredTickets.map((t) => (
-                        <tr key={t.id}>
-                          <td data-label="Ticket ID">
-                            <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--primary)', background: 'var(--bg-hover)', padding: '6px 12px', borderRadius: 8 }}>{t.id}</span>
-                          </td>
-                          <td data-label="Employee Info"><div style={{ fontWeight: 700 }}>{t.employee}</div></td>
-                          <td data-label="Issue Description" style={{ maxWidth: 250, whiteSpace: 'normal', lineHeight: 1.5 }}>{t.issue}</td>
-                          <td data-label="Priority"><span style={{ fontWeight: 700, color: t.priority === 'HIGH' ? 'var(--danger)' : t.priority === 'MEDIUM' ? 'var(--warning)' : 'var(--success)' }}>{t.priority}</span></td>
-                          <td data-label="Current Status"><span style={{ fontWeight: 600, fontSize: 12, padding: '4px 10px', borderRadius: 4, border: '1px solid var(--border)' }}>{t.status}</span></td>
-                          <td data-label="Action" className="action-cell">
-                            <button 
-                              className="btn btn-secondary" 
-                              style={{ padding: '8px 12px', opacity: t.status === 'RESOLVED' ? 0.5 : 1 }} 
-                              onClick={() => {
-                                setTickets(tickets.map(ticket => ticket.id === t.id ? { ...ticket, status: 'RESOLVED' } : ticket));
-                                alert(`Ticket ${t.id} has been marked as resolved!`);
-                              }}
-                              disabled={t.status === 'RESOLVED'}
-                            >
-                              {t.status === 'RESOLVED' ? 'Resolved' : 'Reply & Resolve'}
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </>
+            <Tickets theme={theme} />
           )}
 
           {/* --- EMPLOYEES TAB --- */}

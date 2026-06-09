@@ -5,7 +5,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import * as Location from "expo-location";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons, FontAwesome5 } from "@expo/vector-icons";
+import { Ionicons, FontAwesome5, Feather } from "@expo/vector-icons";
 
 // --- SMART API URL CONFIGURATION ---
 // ⚠️ IMPORTANT: If you are testing on a PHYSICAL PHONE using Expo Go, your phone CANNOT
@@ -124,9 +124,11 @@ function AppContent() {
   const [onlineTeam, setOnlineTeam] = useState([]);
   
   const [myTickets, setMyTickets] = useState([]);
-  
-  const [otSettings, setOtSettings] = useState({
-    standard_hours: 9.0,
+  const [ticketModalVisible, setTicketModalVisible] = useState(false);
+  const [ticketForm, setTicketForm] = useState({ title: '', description: '', priority: 'Medium' });
+  const [isSubmittingTicket, setIsSubmittingTicket] = useState(false);
+
+  const [otSettings, setOtSettings] = useState({    standard_hours: 9.0,
     ot_rate_multiplier: 1.5,
     ot_applicable_from_minutes: 540,
     max_daily_ot_minutes: 180,
@@ -172,13 +174,14 @@ function AppContent() {
     if (!currentToken) return;
     try {
       const headers = { Authorization: `Bearer ${currentToken}` };
-      const [profRes, histRes, leaveRes, payslipRes, teamRes, otRes] = await Promise.all([
+      const [profRes, histRes, leaveRes, payslipRes, teamRes, otRes, ticketRes] = await Promise.all([
         api.get("/employees/me", { headers }),
         api.get("/attendance/history", { headers }),
         api.get("/leaves/me", { headers }).catch(() => ({ data: [] })),
         api.get("/payslips/me", { headers }).catch(() => ({ data: [] })),
         api.get("/attendance/online-team", { headers }).catch(() => ({ data: [] })),
-        api.get("/ot-settings", { headers }).catch(() => ({ data: {} }))
+        api.get("/ot-settings", { headers }).catch(() => ({ data: {} })),
+        api.get("/tickets/me", { headers }).catch(() => ({ data: [] }))
       ]);
 
       setProfile(profRes.data || {});
@@ -217,6 +220,7 @@ function AppContent() {
       setMyLeaves(Array.isArray(leaveRes.data) ? leaveRes.data : []);
       setPayslips(Array.isArray(payslipRes.data) ? payslipRes.data : []);
       setOnlineTeam(Array.isArray(teamRes.data) ? teamRes.data : []);
+      setMyTickets(Array.isArray(ticketRes.data) ? ticketRes.data : []);
       if (otRes.data && Object.keys(otRes.data).length > 0) {
         setOtSettings(otRes.data);
       }
@@ -377,6 +381,22 @@ function AppContent() {
     }
   };
 
+  const submitTicket = async () => {
+    if (!ticketForm.title || !ticketForm.description) return Alert.alert("Error", "Please provide a title and description.");
+    setIsSubmittingTicket(true);
+    try {
+      await api.post("/tickets", ticketForm, { headers: { Authorization: `Bearer ${token}` } });
+      Alert.alert("Success", "Ticket raised successfully");
+      setTicketModalVisible(false);
+      setTicketForm({ title: '', description: '', priority: 'Medium' });
+      loadData(token);
+    } catch (e) {
+      Alert.alert("Error", e?.response?.data?.message || "Failed to submit ticket");
+    } finally {
+      setIsSubmittingTicket(false);
+    }
+  };
+
   const isDark = theme === "dark";
   const palette = useMemo(() => ({
     bgApp: isDark ? "#09090b" : "#f4f7fb",
@@ -429,8 +449,8 @@ function AppContent() {
               
               <View style={{ alignItems: 'center', marginBottom: 32 }}>
                 <Animated.View style={{ transform: [{ translateY: logoFloatAnim }] }}>
-                  <LinearGradient colors={["#6366f1", "#8b5cf6"]} style={[{ width: 80, height: 80, borderRadius: 28, justifyContent: 'center', alignItems: 'center', shadowColor: "#6366f1", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.4, shadowRadius: 15, elevation: 8, marginBottom: 20 }, IS_SMALL_SCREEN && { width: 64, height: 64, borderRadius: 20, marginBottom: 16 }]}>
-                    <FontAwesome5 name="fingerprint" size={IS_SMALL_SCREEN ? 28 : 38} color="#fff" />
+                  <LinearGradient colors={["#6366f1", "#a855f7"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[{ width: 80, height: 80, borderRadius: 28, justifyContent: 'center', alignItems: 'center', shadowColor: "#6366f1", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.4, shadowRadius: 15, elevation: 8, marginBottom: 20 }, IS_SMALL_SCREEN && { width: 64, height: 64, borderRadius: 20, marginBottom: 16 }]}>
+                    <Feather name="activity" size={IS_SMALL_SCREEN ? 32 : 44} color="#fff" />
                   </LinearGradient>
                 </Animated.View>
                 <Text style={{ fontSize: IS_SMALL_SCREEN ? 28 : 36, fontWeight: "900", letterSpacing: -1, color: palette.textPrimary }}>Pulse<Text style={{ color: palette.primary }}>HR</Text></Text>
@@ -745,7 +765,7 @@ function AppContent() {
                         <Text style={{ color: palette.textSecondary, fontSize: 12, marginTop: 4 }}>Uploaded: {safeFormatDate(new Date(slip.created_at))}</Text>
                       </View>
                     </View>
-                    <TouchableOpacity onPress={() => Linking.openURL(`${api.defaults.baseURL}${slip.file_path}`)} style={{ padding: 8 }}>
+                    <TouchableOpacity onPress={() => Linking.openURL(`${api.defaults.baseURL.replace('/api', '')}${slip.file_path}`)} style={{ padding: 8 }}>
                       <Ionicons name="download-outline" size={24} color={palette.primary} />
                     </TouchableOpacity>
                   </View>
@@ -872,8 +892,8 @@ function AppContent() {
           {activeTab === 'Helpdesk' && (
             <ScrollView contentContainerStyle={{ padding: 24 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[palette.primary]} tintColor={palette.primary} />}>
               <Header title="Support Desk" />
-              
-              <TouchableOpacity activeOpacity={0.8} onPress={() => Alert.alert("Coming Soon", "Create Ticket module will be available in next update.")}>
+
+              <TouchableOpacity activeOpacity={0.8} onPress={() => setTicketModalVisible(true)}>
                 <LinearGradient colors={['#3b82f6', '#2563eb']} style={styles.applyLeaveBtn} start={{x:0, y:0}} end={{x:1, y:1}}>
                   <Ionicons name="add" size={24} color="#fff" />
                   <Text style={styles.applyLeaveText}>Raise New Ticket</Text>
@@ -881,87 +901,135 @@ function AppContent() {
               </TouchableOpacity>
 
               <Text style={[styles.sectionTitle, { color: palette.textPrimary }]}>My Tickets</Text>
-              
-              {myTickets.map((ticket, idx) => (
-                <View key={idx} style={[styles.leaveCard, { backgroundColor: palette.bgCard, borderColor: palette.border, shadowColor: palette.shadow }]}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
-                    <Text style={{ color: palette.primary, fontWeight: '800', fontSize: 13 }}>{ticket.id}</Text>
-                    <Text style={{ fontSize: 11, fontWeight: '800', color: ticket.status === 'RESOLVED' ? palette.success : palette.warning }}>
-                      {ticket.status}
-                    </Text>
+
+              {myTickets.length === 0 ? (
+                <Text style={{ color: palette.textSecondary, fontSize: 14 }}>No tickets raised yet.</Text>
+              ) : (
+                myTickets.map((ticket, idx) => (
+                  <View key={ticket.id || idx} style={[styles.leaveCard, { backgroundColor: palette.bgCard, borderColor: palette.border, shadowColor: palette.shadow }]}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+                      <Text style={{ color: palette.primary, fontWeight: '800', fontSize: 13 }}>#{ticket.id}</Text>
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: ticket.status === 'RESOLVED' ? palette.success : palette.warning }}>
+                        {ticket.status}
+                      </Text>
+                    </View>
+                    <Text style={{ color: palette.textPrimary, fontWeight: '800', fontSize: 16, marginBottom: 4 }}>{ticket.title}</Text>
+                    <Text style={{ color: palette.textSecondary, fontSize: 14, marginBottom: 12 }}>{ticket.description}</Text>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={{ color: palette.textSecondary, fontSize: 13, fontWeight: '600' }}>Priority: <Text style={{color: ticket.priority === 'High' ? palette.danger : palette.textSecondary}}>{ticket.priority}</Text></Text>
+                      <Text style={{ color: palette.textSecondary, fontSize: 12 }}>{safeFormatDate(new Date(ticket.created_at))}</Text>
+                    </View>
                   </View>
-                  <Text style={{ color: palette.textPrimary, fontWeight: '800', fontSize: 16, marginBottom: 12 }}>{ticket.title}</Text>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text style={{ color: palette.textSecondary, fontSize: 13, fontWeight: '600' }}>Priority: <Text style={{color: ticket.priority === 'High' ? palette.danger : palette.textSecondary}}>{ticket.priority}</Text></Text>
-                    <Text style={{ color: palette.textSecondary, fontSize: 12 }}>{ticket.date}</Text>
-                  </View>
-                </View>
-              ))}
+                ))
+              )}
             </ScrollView>
           )}
-
           {/* TAB: PROFILE */}
           {activeTab === 'Profile' && (
             <ScrollView contentContainerStyle={{ padding: 24 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[palette.primary]} tintColor={palette.primary} />}>
-              <Header title="Settings" />
+              <Header title="My Profile" />
               
-              <View style={[styles.profileCard, { backgroundColor: palette.bgCard, borderColor: palette.border, shadowColor: palette.shadow }]}>
-                <LinearGradient colors={['#6366f1', '#a855f7']} style={styles.profileAvatar}>
-                  <Text style={{ fontSize: 36, fontWeight: '800', color: '#fff' }}>{profile.name ? profile.name.charAt(0).toUpperCase() : "E"}</Text>
-                </LinearGradient>
-                <Text style={[styles.profileName, { color: palette.textPrimary }]}>{profile.name}</Text>
-                <Text style={[styles.profileCode, { color: palette.primary, fontWeight: '700', marginTop: 4, backgroundColor: 'rgba(99, 102, 241, 0.1)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 }]}>{profile.emp_code}</Text>
-                
-                <View style={[styles.divider, { backgroundColor: palette.border, marginVertical: 24, width: '100%' }]} />
-                
-                <View style={styles.profileDetailRow}>
-                  <View style={[styles.profileIconBox, { backgroundColor: palette.bgInput }]}><Ionicons name="briefcase" size={18} color={palette.primary} /></View>
-                  <View style={{ marginLeft: 16 }}>
-                    <Text style={{ fontSize: 12, color: palette.textSecondary, fontWeight: '700' }}>Department</Text>
-                    <Text style={[styles.profileDetailText, { color: palette.textPrimary, marginLeft: 0, marginTop: 2 }]}>{profile.department || "General Department"}</Text>
-                  </View>
+              {/* Premium Hero Identity Card */}
+              <LinearGradient colors={['#4f46e5', '#7c3aed']} style={{ borderRadius: 32, padding: 32, alignItems: 'center', marginBottom: 28, elevation: 12, shadowColor: '#4f46e5', shadowOffset: {width: 0, height: 10}, shadowOpacity: 0.3, shadowRadius: 20 }} start={{x:0, y:0}} end={{x:1, y:1}}>
+                <View style={{ width: 100, height: 100, borderRadius: 50, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginBottom: 16, borderWidth: 2, borderColor: 'rgba(255,255,255,0.5)' }}>
+                  <Text style={{ fontSize: 40, fontWeight: '900', color: '#fff' }}>{profile.name ? profile.name.charAt(0).toUpperCase() : "E"}</Text>
                 </View>
-                <View style={styles.profileDetailRow}>
-                  <View style={[styles.profileIconBox, { backgroundColor: palette.bgInput }]}><Ionicons name="medal" size={18} color={palette.success} /></View>
-                  <View style={{ marginLeft: 16 }}>
-                    <Text style={{ fontSize: 12, color: palette.textSecondary, fontWeight: '700' }}>Designation</Text>
-                    <Text style={[styles.profileDetailText, { color: palette.textPrimary, marginLeft: 0, marginTop: 2 }]}>{profile.designation || "Employee"}</Text>
-                  </View>
+                <Text style={{ fontSize: 26, fontWeight: '800', color: '#fff', marginBottom: 6, textAlign: 'center' }}>{profile.name}</Text>
+                <View style={{ backgroundColor: 'rgba(255,255,255,0.25)', paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20 }}>
+                  <Text style={{ color: '#fff', fontWeight: '800', fontSize: 14, letterSpacing: 1 }}>{profile.emp_code}</Text>
                 </View>
-                <View style={styles.profileDetailRow}>
-                  <View style={[styles.profileIconBox, { backgroundColor: palette.bgInput }]}><Ionicons name="business" size={18} color={palette.warning} /></View>
-                  <View style={{ marginLeft: 16 }}>
-                    <Text style={{ fontSize: 12, color: palette.textSecondary, fontWeight: '700' }}>Workspace ID</Text>
-                    <Text style={[styles.profileDetailText, { color: palette.textPrimary, marginLeft: 0, marginTop: 2 }]}>{companyCode}</Text>
-                  </View>
+              </LinearGradient>
+
+              <Text style={[styles.sectionTitle, { color: palette.textPrimary }]}>Professional Details</Text>
+              
+              <View style={{ backgroundColor: palette.bgCard, borderRadius: 28, borderWidth: 1, borderColor: palette.border, padding: 20, marginBottom: 28, shadowColor: palette.shadow, elevation: 6 }}>
+                
+                {/* Department */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
+                   <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(99, 102, 241, 0.1)', justifyContent: 'center', alignItems: 'center' }}><Ionicons name="briefcase" size={22} color={palette.primary} /></View>
+                   <View style={{ marginLeft: 16, flex: 1 }}>
+                     <Text style={{ fontSize: 12, color: palette.textSecondary, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 }}>Department</Text>
+                     <Text style={{ fontSize: 16, color: palette.textPrimary, fontWeight: '800', marginTop: 2 }}>{profile.department || "General Department"}</Text>
+                   </View>
+                </View>
+                <View style={{ height: 1, backgroundColor: palette.border, marginBottom: 20, marginLeft: 60 }} />
+                
+                {/* Designation */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
+                   <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(16, 185, 129, 0.1)', justifyContent: 'center', alignItems: 'center' }}><Ionicons name="medal" size={22} color={palette.success} /></View>
+                   <View style={{ marginLeft: 16, flex: 1 }}>
+                     <Text style={{ fontSize: 12, color: palette.textSecondary, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 }}>Designation</Text>
+                     <Text style={{ fontSize: 16, color: palette.textPrimary, fontWeight: '800', marginTop: 2 }}>{profile.designation || "Employee"}</Text>
+                   </View>
+                </View>
+                <View style={{ height: 1, backgroundColor: palette.border, marginBottom: 20, marginLeft: 60 }} />
+
+                {/* Date Joined */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
+                   <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(245, 158, 11, 0.1)', justifyContent: 'center', alignItems: 'center' }}><Ionicons name="calendar" size={22} color={palette.warning} /></View>
+                   <View style={{ marginLeft: 16, flex: 1 }}>
+                     <Text style={{ fontSize: 12, color: palette.textSecondary, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 }}>Date Joined</Text>
+                     <Text style={{ fontSize: 16, color: palette.textPrimary, fontWeight: '800', marginTop: 2 }}>{profile.created_at ? safeFormatDate(new Date(profile.created_at)) : "--/--/----"}</Text>
+                   </View>
+                </View>
+                <View style={{ height: 1, backgroundColor: palette.border, marginBottom: 20, marginLeft: 60 }} />
+
+                {/* Account Status */}
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                   <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: profile.status === 'ACTIVE' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', justifyContent: 'center', alignItems: 'center' }}><Ionicons name={profile.status === 'ACTIVE' ? "shield-checkmark" : "warning"} size={22} color={profile.status === 'ACTIVE' ? palette.success : palette.danger} /></View>
+                   <View style={{ marginLeft: 16, flex: 1 }}>
+                     <Text style={{ fontSize: 12, color: palette.textSecondary, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 }}>Account Status</Text>
+                     <Text style={{ fontSize: 16, color: profile.status === 'ACTIVE' ? palette.success : palette.danger, fontWeight: '900', marginTop: 2 }}>{profile.status || "ACTIVE"}</Text>
+                   </View>
                 </View>
               </View>
 
-              <Text style={[styles.sectionTitle, { color: palette.textPrimary, marginTop: 8 }]}>Preferences</Text>
+              <Text style={[styles.sectionTitle, { color: palette.textPrimary }]}>Account & Preferences</Text>
 
-              <View style={{ backgroundColor: palette.bgCard, borderRadius: 24, borderWidth: 1, borderColor: palette.border, overflow: 'hidden', marginBottom: 24 }}>
-                <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderBottomColor: palette.border }} onPress={toggleTheme}>
+              <View style={{ backgroundColor: palette.bgCard, borderRadius: 28, borderWidth: 1, borderColor: palette.border, overflow: 'hidden', marginBottom: 32, shadowColor: palette.shadow, elevation: 6 }}>
+                
+                {/* Workspace ID */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderBottomColor: palette.border }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <View style={[styles.profileIconBox, { backgroundColor: palette.bgInput }]}><Ionicons name={isDark ? "sunny" : "moon"} size={18} color={palette.textPrimary} /></View>
-                    <Text style={{ fontSize: 16, fontWeight: '700', color: palette.textPrimary, marginLeft: 16 }}>{isDark ? "Light Mode" : "Dark Mode"}</Text>
+                    <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: palette.bgInput, justifyContent: 'center', alignItems: 'center' }}><Ionicons name="business" size={20} color={palette.textPrimary} /></View>
+                    <View style={{ marginLeft: 16 }}>
+                      <Text style={{ fontSize: 15, fontWeight: '800', color: palette.textPrimary }}>Workspace ID</Text>
+                      <Text style={{ fontSize: 13, color: palette.textSecondary, marginTop: 2, fontWeight: '600' }}>{companyCode}</Text>
+                    </View>
                   </View>
-                  <View style={{ width: 40, height: 24, borderRadius: 12, backgroundColor: isDark ? palette.primary : palette.border, justifyContent: 'center', paddingHorizontal: 2 }}>
+                  <Ionicons name="lock-closed" size={18} color={palette.textSecondary} />
+                </View>
+
+                {/* Theme Toggle */}
+                <TouchableOpacity activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderBottomColor: palette.border }} onPress={toggleTheme}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: palette.bgInput, justifyContent: 'center', alignItems: 'center' }}><Ionicons name={isDark ? "moon" : "sunny"} size={20} color={palette.textPrimary} /></View>
+                    <View style={{ marginLeft: 16 }}>
+                      <Text style={{ fontSize: 15, fontWeight: '800', color: palette.textPrimary }}>{isDark ? "Dark Mode" : "Light Mode"}</Text>
+                      <Text style={{ fontSize: 13, color: palette.textSecondary, marginTop: 2, fontWeight: '500' }}>Toggle app appearance</Text>
+                    </View>
+                  </View>
+                  <View style={{ width: 46, height: 26, borderRadius: 13, backgroundColor: isDark ? palette.primary : palette.border, justifyContent: 'center', paddingHorizontal: 3 }}>
                     <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff', alignSelf: isDark ? 'flex-end' : 'flex-start' }} />
                   </View>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20 }} onPress={() => Linking.openURL('mailto:support@pulsehr.com')}>
+                {/* Support */}
+                <TouchableOpacity activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20 }} onPress={() => Linking.openURL('mailto:support@pulsehr.com')}>
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <View style={[styles.profileIconBox, { backgroundColor: palette.bgInput }]}><Ionicons name="help-buoy" size={18} color={palette.textPrimary} /></View>
-                    <Text style={{ fontSize: 16, fontWeight: '700', color: palette.textPrimary, marginLeft: 16 }}>Help & Support</Text>
+                    <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: palette.bgInput, justifyContent: 'center', alignItems: 'center' }}><Ionicons name="help-buoy" size={20} color={palette.textPrimary} /></View>
+                    <View style={{ marginLeft: 16 }}>
+                      <Text style={{ fontSize: 15, fontWeight: '800', color: palette.textPrimary }}>Help & Support</Text>
+                      <Text style={{ fontSize: 13, color: palette.textSecondary, marginTop: 2, fontWeight: '500' }}>Contact HR or IT Desk</Text>
+                    </View>
                   </View>
                   <Ionicons name="chevron-forward" size={20} color={palette.textSecondary} />
                 </TouchableOpacity>
               </View>
 
               <TouchableOpacity activeOpacity={0.8} style={[styles.logoutBtn, { backgroundColor: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.2)', marginBottom: 40 }]} onPress={handleLogout}>
-                <Ionicons name="log-out" size={20} color={palette.danger} />
-                <Text style={{ color: palette.danger, fontWeight: '800', fontSize: 16, marginLeft: 10 }}>Sign Out</Text>
+                <Ionicons name="log-out" size={22} color={palette.danger} />
+                <Text style={{ color: palette.danger, fontWeight: '900', fontSize: 16, marginLeft: 10, letterSpacing: 0.5 }}>Sign Out</Text>
               </TouchableOpacity>
             </ScrollView>
           )}
@@ -1031,6 +1099,52 @@ function AppContent() {
               <TouchableOpacity style={{ marginTop: 10 }} activeOpacity={0.8} onPress={submitLeave} disabled={isApplyingLeave}>
                 <LinearGradient colors={['#4f46e5', '#7c3aed']} style={[styles.primaryBtn, { borderRadius: 16 }]} start={{x:0, y:0}} end={{x:1, y:1}}>
                   {isApplyingLeave ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>Submit Request</Text>}
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Create Ticket Modal */}
+      <Modal visible={ticketModalVisible} transparent animationType="slide">
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.modalOverlay}>
+          <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'flex-end' }} keyboardShouldPersistTaps="handled">
+            <View style={[styles.leaveModalContent, { backgroundColor: palette.bgCard, borderColor: palette.border, shadowColor: palette.shadow }]}>
+              
+              <View style={{ width: 40, height: 5, backgroundColor: palette.border, borderRadius: 10, alignSelf: 'center', marginBottom: 20 }} />
+              
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30 }}>
+                <Text style={{ fontSize: 24, fontWeight: '800', color: palette.textPrimary }}>Raise Ticket</Text>
+                <TouchableOpacity onPress={() => setTicketModalVisible(false)} style={{ backgroundColor: palette.bgInput, padding: 8, borderRadius: 20 }}>
+                  <Ionicons name="close" size={24} color={palette.textPrimary} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: palette.textSecondary }]}>Title / Subject</Text>
+                <TextInput style={[styles.modalInput, { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.bgInput }]} placeholder="e.g., VPN not working" placeholderTextColor={palette.textSecondary} value={ticketForm.title} onChangeText={(t) => setTicketForm({...ticketForm, title: t})} />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: palette.textSecondary }]}>Description</Text>
+                <TextInput style={[styles.modalInput, { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.bgInput, height: 100, textAlignVertical: 'top' }]} multiline placeholder="Describe the issue in detail..." placeholderTextColor={palette.textSecondary} value={ticketForm.description} onChangeText={(t) => setTicketForm({...ticketForm, description: t})} />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: palette.textSecondary }]}>Priority</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
+                  {['Low', 'Medium', 'High'].map(p => (
+                    <TouchableOpacity key={p} onPress={() => setTicketForm({...ticketForm, priority: p})} style={{ flex: 1, padding: 12, borderWidth: 1, borderColor: ticketForm.priority === p ? palette.primary : palette.border, borderRadius: 8, marginHorizontal: 4, backgroundColor: ticketForm.priority === p ? 'rgba(99, 102, 241, 0.1)' : palette.bgInput, alignItems: 'center' }}>
+                      <Text style={{ color: ticketForm.priority === p ? palette.primary : palette.textSecondary, fontWeight: '800' }}>{p}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              <TouchableOpacity style={{ marginTop: 20 }} activeOpacity={0.8} onPress={submitTicket} disabled={isSubmittingTicket}>
+                <LinearGradient colors={['#3b82f6', '#2563eb']} style={[styles.primaryBtn, { borderRadius: 16 }]} start={{x:0, y:0}} end={{x:1, y:1}}>
+                  {isSubmittingTicket ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>Submit Ticket</Text>}
                 </LinearGradient>
               </TouchableOpacity>
             </View>
