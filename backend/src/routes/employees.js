@@ -14,18 +14,28 @@ router.get("/me", auth, async (req, res) => {
     }
     const empId = req.user.employee_id || req.user.id;
     const [rows] = await pool.query(
-      "SELECT emp_code, name, designation, status, created_at FROM employees WHERE id = ? AND company_id = ?",
+      `SELECT e.emp_code, e.name, e.designation, e.status, e.created_at, c.settings 
+       FROM employees e 
+       JOIN companies c ON e.company_id = c.id 
+       WHERE e.id = ? AND e.company_id = ?`,
       [empId, req.user.company_id]
     );
     if (!rows.length) return res.status(404).json({ message: "Employee not found" });
     const e = rows[0];
+    
+    let settings = {};
+    try { settings = JSON.parse(e.settings || "{}"); } catch(err){}
+
     res.json({
       name: e.name,
       emp_code: e.emp_code,
       designation: e.designation || "Employee",
       department: e.designation || "General",
       status: e.status,
-      created_at: e.created_at
+      created_at: e.created_at,
+      office_lat: settings.office_lat || null,
+      office_lng: settings.office_lng || null,
+      geofence_radius: settings.geofence_radius || 50 // default 50 meters limit
     });
   } catch (err) {
     console.error("Error fetching employee profile:", err);
@@ -175,6 +185,27 @@ router.put("/company", auth, roles("ADMIN"), async (req, res) => {
     );
     res.json({ message: "Company name updated successfully" });
   } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Update company geofence settings
+router.put("/company/geofence", auth, roles("ADMIN"), async (req, res) => {
+  try {
+    const { office_lat, office_lng, geofence_radius } = req.body;
+    const [rows] = await pool.query("SELECT settings FROM companies WHERE id = ?", [req.user.company_id]);
+    let settings = {};
+    if (rows.length > 0) {
+      try { settings = JSON.parse(rows[0].settings || "{}"); } catch(e){}
+    }
+    settings.office_lat = office_lat ? parseFloat(office_lat) : null;
+    settings.office_lng = office_lng ? parseFloat(office_lng) : null;
+    settings.geofence_radius = geofence_radius ? parseInt(geofence_radius, 10) : 50;
+
+    await pool.query("UPDATE companies SET settings = ? WHERE id = ?", [JSON.stringify(settings), req.user.company_id]);
+    res.json({ message: "Geofence settings updated successfully" });
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ message: "Server error" });
   }
 });

@@ -4,6 +4,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-cont
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import * as Location from "expo-location";
+import * as LocalAuthentication from "expo-local-authentication";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, FontAwesome5, Feather } from "@expo/vector-icons";
 
@@ -70,6 +71,18 @@ const safeGetWeekday = (date) => DAYS[date.getDay()] || "";
 const safeFormatDate = (date) => {
   if (!date || isNaN(date.getTime())) return "--/--/----";
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
+// Haversine formula to calculate distance in meters between two GPS coordinates
+const getDistanceFromLatLonInMeters = (lat1, lon1, lat2, lon2) => {
+  const R = 6371e3; // Earth radius in meters
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
 };
 
 const LiveClock = React.memo(({ palette }) => {
@@ -139,6 +152,11 @@ function AppContent() {
   const [leaveModalVisible, setLeaveModalVisible] = useState(false);
   const [leaveForm, setLeaveForm] = useState({ start_date: '', end_date: '', leave_type: 'Annual Leave', reason: '' });
   const [isApplyingLeave, setIsApplyingLeave] = useState(false);
+  
+  const [myExpenses, setMyExpenses] = useState([]);
+  const [expenseModalVisible, setExpenseModalVisible] = useState(false);
+  const [expenseForm, setExpenseForm] = useState({ title: '', amount: '', description: '' });
+  const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [isAppReady, setIsAppReady] = useState(false);
   
@@ -174,14 +192,15 @@ function AppContent() {
     if (!currentToken) return;
     try {
       const headers = { Authorization: `Bearer ${currentToken}` };
-      const [profRes, histRes, leaveRes, payslipRes, teamRes, otRes, ticketRes] = await Promise.all([
+      const [profRes, histRes, leaveRes, payslipRes, teamRes, otRes, ticketRes, expRes] = await Promise.all([
         api.get("/employees/me", { headers }),
         api.get("/attendance/history", { headers }),
         api.get("/leaves/me", { headers }).catch(() => ({ data: [] })),
         api.get("/payslips/me", { headers }).catch(() => ({ data: [] })),
         api.get("/attendance/online-team", { headers }).catch(() => ({ data: [] })),
         api.get("/ot-settings", { headers }).catch(() => ({ data: {} })),
-        api.get("/tickets/me", { headers }).catch(() => ({ data: [] }))
+        api.get("/tickets/me", { headers }).catch(() => ({ data: [] })),
+        api.get("/expenses/me", { headers }).catch(() => ({ data: [] }))
       ]);
 
       setProfile(profRes.data || {});
@@ -221,6 +240,7 @@ function AppContent() {
       setPayslips(Array.isArray(payslipRes.data) ? payslipRes.data : []);
       setOnlineTeam(Array.isArray(teamRes.data) ? teamRes.data : []);
       setMyTickets(Array.isArray(ticketRes.data) ? ticketRes.data : []);
+      setMyExpenses(Array.isArray(expRes.data) ? expRes.data : []);
       if (otRes.data && Object.keys(otRes.data).length > 0) {
         setOtSettings(otRes.data);
       }
@@ -300,6 +320,25 @@ function AppContent() {
 
   const handleLocationAction = async (type) => {
     setIsLocating(true);
+
+    // --- NEW: BIOMETRIC AUTHENTICATION (Phase 1 Security) ---
+    try {
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+      if (hasHardware && isEnrolled) {
+        const authResult = await LocalAuthentication.authenticateAsync({
+          promptMessage: `Verify identity to Punch ${type}`,
+          fallbackLabel: 'Use PIN',
+        });
+        if (!authResult.success) {
+          setIsLocating(false);
+          return Alert.alert("Authentication Failed", "You must verify your identity to mark attendance.");
+        }
+      }
+    } catch (e) {
+      console.log("Biometric error:", e);
+    }
+
     let addressStr = "Unknown Location";
     try {
       // Check current permissions first to avoid re-requesting/blocking
@@ -319,6 +358,21 @@ function AppContent() {
           ]);
         }
         if (loc) {
+          // --- NEW: STRICT GEOFENCING (Phase 1b) ---
+          if (profile.office_lat && profile.office_lng && profile.geofence_radius) {
+            const distance = getDistanceFromLatLonInMeters(
+              loc.coords.latitude, loc.coords.longitude,
+              profile.office_lat, profile.office_lng
+            );
+            if (distance > profile.geofence_radius) {
+              setIsLocating(false);
+              return Alert.alert(
+                "Location Out of Bounds 🚫", 
+                `You are ${Math.round(distance)} meters away from the office.\n\nYou must be within ${profile.geofence_radius} meters to Punch ${type}.`
+              );
+            }
+          }
+
           try {
             // Reverse Geocode with strict 1s timeout to prevent hanging
             const [geocode] = await Promise.race([
@@ -394,6 +448,22 @@ function AppContent() {
       Alert.alert("Error", e?.response?.data?.message || "Failed to submit ticket");
     } finally {
       setIsSubmittingTicket(false);
+    }
+  };
+
+  const submitExpense = async () => {
+    if (!expenseForm.title || !expenseForm.amount) return Alert.alert("Error", "Provide title and amount");
+    setIsSubmittingExpense(true);
+    try {
+      await api.post("/expenses", expenseForm, { headers: { Authorization: `Bearer ${token}` } });
+      Alert.alert("Success", "Expense claim submitted successfully");
+      setExpenseModalVisible(false);
+      setExpenseForm({ title: '', amount: '', description: '' });
+      loadData(token);
+    } catch (e) {
+      Alert.alert("Error", e?.response?.data?.message || "Failed to submit expense");
+    } finally {
+      setIsSubmittingExpense(false);
     }
   };
 
@@ -743,6 +813,38 @@ function AppContent() {
             </View>
           )}
 
+          {/* TAB: EXPENSES */}
+          {activeTab === 'Expenses' && (
+            <View style={{ flex: 1 }}>
+              <ScrollView contentContainerStyle={{ padding: 24 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[palette.primary]} tintColor={palette.primary} />}>
+                <Header title="My Expenses" />
+                <TouchableOpacity activeOpacity={0.8} onPress={() => setExpenseModalVisible(true)}>
+                  <LinearGradient colors={['#10b981', '#059669']} style={styles.applyLeaveBtn} start={{x:0, y:0}} end={{x:1, y:1}}>
+                    <Ionicons name="receipt" size={24} color="#fff" />
+                    <Text style={styles.applyLeaveText}>Claim Reimbursement</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+
+                {myExpenses.length === 0 ? (
+                  <Text style={{ color: palette.textSecondary, textAlign: 'center', marginTop: 40 }}>No expenses claimed yet.</Text>
+                ) : (
+                  myExpenses.map((exp, idx) => (
+                    <View key={idx} style={[styles.leaveCard, { backgroundColor: palette.bgCard, borderColor: palette.border, shadowColor: palette.shadow }]}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+                        <Text style={{ color: palette.textPrimary, fontWeight: '800', fontSize: 16 }}>{exp.title}</Text>
+                        <View style={[styles.badge, { backgroundColor: exp.status === 'APPROVED' ? 'rgba(16,185,129,0.15)' : exp.status === 'REJECTED' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)' }]}>
+                          <Text style={{ fontSize: 11, fontWeight: '800', color: exp.status === 'APPROVED' ? palette.success : exp.status === 'REJECTED' ? palette.danger : palette.warning }}>{exp.status}</Text>
+                        </View>
+                      </View>
+                      <Text style={{ color: palette.primary, fontSize: 20, fontWeight: '900', marginBottom: 8 }}>₹{exp.amount}</Text>
+                      {exp.description ? <Text style={{ color: palette.textSecondary, fontSize: 14 }}>{exp.description}</Text> : null}
+                    </View>
+                  ))
+                )}
+              </ScrollView>
+            </View>
+          )}
+
           {/* TAB: PAYSLIPS */}
           {activeTab === 'Payslips' && (
             <ScrollView contentContainerStyle={{ padding: 24 }} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[palette.primary]} tintColor={palette.primary} />}>
@@ -1039,12 +1141,13 @@ function AppContent() {
       {/* Floating Bottom Tab Bar */}
       <View style={[styles.tabBar, { bottom: tabBarBottom, backgroundColor: palette.tabBg, borderColor: palette.border, shadowColor: palette.shadow, paddingHorizontal: 0 }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12, alignItems: 'center', flexGrow: 1, justifyContent: 'space-between' }}>
-          {['Home', 'History', 'Leaves', 'Payslips', 'OT Info', 'Helpdesk', 'Profile'].map((tab) => {
+          {['Home', 'History', 'Leaves', 'Expenses', 'Payslips', 'OT Info', 'Helpdesk', 'Profile'].map((tab) => {
             const isActive = activeTab === tab;
             let iconName = "";
             if (tab === 'Home') iconName = isActive ? "grid" : "grid-outline";
             if (tab === 'History') iconName = isActive ? "time" : "time-outline";
             if (tab === 'Leaves') iconName = isActive ? "calendar" : "calendar-outline";
+            if (tab === 'Expenses') iconName = isActive ? "wallet" : "wallet-outline";
             if (tab === 'Payslips') iconName = isActive ? "receipt" : "receipt-outline";
             if (tab === 'OT Info') iconName = isActive ? "flash" : "flash-outline";
             if (tab === 'Helpdesk') iconName = isActive ? "headset" : "headset-outline";
@@ -1145,6 +1248,40 @@ function AppContent() {
               <TouchableOpacity style={{ marginTop: 20 }} activeOpacity={0.8} onPress={submitTicket} disabled={isSubmittingTicket}>
                 <LinearGradient colors={['#3b82f6', '#2563eb']} style={[styles.primaryBtn, { borderRadius: 16 }]} start={{x:0, y:0}} end={{x:1, y:1}}>
                   {isSubmittingTicket ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>Submit Ticket</Text>}
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Expense Modal */}
+      <Modal visible={expenseModalVisible} transparent animationType="slide">
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.modalOverlay}>
+          <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'flex-end' }} keyboardShouldPersistTaps="handled">
+            <View style={[styles.leaveModalContent, { backgroundColor: palette.bgCard, borderColor: palette.border, shadowColor: palette.shadow }]}>
+              <View style={{ width: 40, height: 5, backgroundColor: palette.border, borderRadius: 10, alignSelf: 'center', marginBottom: 20 }} />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30 }}>
+                <Text style={{ fontSize: 24, fontWeight: '800', color: palette.textPrimary }}>Claim Expense</Text>
+                <TouchableOpacity onPress={() => setExpenseModalVisible(false)} style={{ backgroundColor: palette.bgInput, padding: 8, borderRadius: 20 }}>
+                  <Ionicons name="close" size={24} color={palette.textPrimary} />
+                </TouchableOpacity>
+              </View>
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: palette.textSecondary }]}>Expense Title</Text>
+                <TextInput style={[styles.modalInput, { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.bgInput }]} placeholder="e.g. Client Lunch, Travel" placeholderTextColor={palette.textSecondary} value={expenseForm.title} onChangeText={(t) => setExpenseForm({...expenseForm, title: t})} />
+              </View>
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: palette.textSecondary }]}>Amount (₹)</Text>
+                <TextInput style={[styles.modalInput, { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.bgInput }]} placeholder="500" keyboardType="numeric" placeholderTextColor={palette.textSecondary} value={expenseForm.amount} onChangeText={(t) => setExpenseForm({...expenseForm, amount: t})} />
+              </View>
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: palette.textSecondary }]}>Description (Optional)</Text>
+                <TextInput style={[styles.modalInput, { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.bgInput, height: 80, textAlignVertical: 'top' }]} multiline placeholder="Add details..." placeholderTextColor={palette.textSecondary} value={expenseForm.description} onChangeText={(t) => setExpenseForm({...expenseForm, description: t})} />
+              </View>
+              <TouchableOpacity style={{ marginTop: 10 }} activeOpacity={0.8} onPress={submitExpense} disabled={isSubmittingExpense}>
+                <LinearGradient colors={['#10b981', '#059669']} style={[styles.primaryBtn, { borderRadius: 16 }]} start={{x:0, y:0}} end={{x:1, y:1}}>
+                  {isSubmittingExpense ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>Submit Claim</Text>}
                 </LinearGradient>
               </TouchableOpacity>
             </View>

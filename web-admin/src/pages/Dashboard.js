@@ -83,6 +83,7 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
   const [stats, setStats] = useState({ total: 0, present: 0, late: 0, absent: 0, companyName: "Loading...", companyCode: "", adminName: "Admin" });
   const [employees, setEmployees] = useState([]);
   const [leaves, setLeaves] = useState([]);
+  const [expenses, setExpenses] = useState([]);
   
   // UI State
   const [searchQuery, setSearchQuery] = useState("");
@@ -117,6 +118,9 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
   const [subscription, setSubscription] = useState(null);
   const [workspace, setWorkspace] = useState(null);
   const [copiedWsId, setCopiedWsId] = useState(false);
+  const [officeLat, setOfficeLat] = useState("");
+  const [officeLng, setOfficeLng] = useState("");
+  const [geofenceRadius, setGeofenceRadius] = useState(50);
 
   useEffect(() => {
     const targets = [document.documentElement, document.body];
@@ -158,7 +162,7 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
   const loadData = async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
-      const [attRes, statsRes, empRes, leavesRes, payslipsRes, noticesRes, monthlyRes, billingRes, workspaceRes] = await Promise.all([
+      const [attRes, statsRes, empRes, leavesRes, payslipsRes, noticesRes, monthlyRes, billingRes, workspaceRes, expensesRes] = await Promise.all([
         api.get("/attendance/today").catch(() => ({ data: [] })),
         api.get("/attendance/stats/today").catch(() => ({ data: { total: 0, present: 0, late: 0, absent: 0, companyName: "Error Loading", companyCode: "", adminName: "Admin" } })),
         api.get("/employees").catch(() => ({ data: [] })),
@@ -167,14 +171,21 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
         api.get("/notices").catch(() => ({ data: [] })),
         api.get(`/attendance/summary/monthly?month=${month}`).catch(() => ({ data: [] })),
         api.get("/billing/status").catch(() => ({ data: null })),
-        api.get("/auth/workspace").catch(() => ({ data: null }))
+        api.get("/auth/workspace").catch(() => ({ data: null })),
+        api.get("/expenses").catch(() => ({ data: [] }))
       ]);
       if (billingRes.data) setSubscription(billingRes.data);
-      if (workspaceRes.data) setWorkspace(workspaceRes.data);
+      if (workspaceRes.data) {
+        setWorkspace(workspaceRes.data);
+        setOfficeLat(workspaceRes.data.features?.office_lat || "");
+        setOfficeLng(workspaceRes.data.features?.office_lng || "");
+        setGeofenceRadius(workspaceRes.data.features?.geofence_radius || 50);
+      }
       setRows(attRes.data);
       setStats(statsRes.data);
       setEmployees(empRes.data);
       setLeaves(leavesRes.data || []);
+      setExpenses(expensesRes.data || []);
       setPayslips(payslipsRes.data || []);
       setNotices(noticesRes.data || []);
       setMonthlySummary(monthlyRes?.data || []);
@@ -264,6 +275,34 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
       alert("Company name updated successfully!");
     } catch (err) {
       alert(err.response?.data?.message || "Failed to update company name");
+    }
+  };
+
+  const handleSaveGeofence = async () => {
+    try {
+      await api.put("/employees/company/geofence", {
+        office_lat: officeLat,
+        office_lng: officeLng,
+        geofence_radius: geofenceRadius
+      });
+      alert("Geofence settings saved successfully!");
+      loadData();
+    } catch (err) {
+      alert("Failed to save geofence settings");
+    }
+  };
+
+  const handleGetCurrentLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setOfficeLat(position.coords.latitude);
+          setOfficeLng(position.coords.longitude);
+        },
+        (error) => alert("Failed to get location. Ensure location access is permitted.")
+      );
+    } else {
+      alert("Geolocation is not supported by your browser.");
     }
   };
 
@@ -486,7 +525,7 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
       (item.status && item.status.toLowerCase().includes(lowerQuery)) ||
       (item.employee && item.employee.toLowerCase().includes(lowerQuery)) ||
       (item.issue && item.issue.toLowerCase().includes(lowerQuery)) ||
-      (item.id && item.toLowerCase().includes(lowerQuery))
+      (item.id && String(item.id).toLowerCase().includes(lowerQuery))
     );
   };
 
@@ -495,6 +534,7 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
   const filteredMonthly = useMemo(() => filterBySearch(monthlySummary, searchQuery), [monthlySummary, searchQuery]);
   const filteredEmployees = useMemo(() => filterBySearch(employees, searchQuery), [employees, searchQuery]);
   const filteredLeaves = useMemo(() => filterBySearch(leaves, searchQuery), [leaves, searchQuery]);
+  const filteredExpenses = useMemo(() => filterBySearch(expenses, searchQuery), [expenses, searchQuery]);
 
   // Chart Data
   const chartData = [
@@ -581,6 +621,9 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
           </button>
           <button className={`nav-item ${activeNav === 'leaves' ? 'active' : ''}`} onClick={() => setActiveNav('leaves')}>
             <CalendarDays size={20} /> Leave Requests
+          </button>
+          <button className={`nav-item ${activeNav === 'expenses' ? 'active' : ''}`} onClick={() => setActiveNav('expenses')}>
+            <CreditCard size={20} /> Reimbursements
           </button>
           <button className={`nav-item ${activeNav === 'payslips' ? 'active' : ''}`} onClick={() => setActiveNav('payslips')}>
             <Receipt size={20} /> Payroll & Payslips
@@ -963,7 +1006,11 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                   <h1 className="page-title">Attendance Logs</h1>
                   <p style={{ color: 'var(--text-muted)', fontSize: 16, marginTop: 4, fontWeight: 500 }}>Comprehensive daily tracking.</p>
                 </div>
-                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+              <div style={{ position: 'relative', minWidth: '220px' }}>
+                <Search size={18} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                <input type="text" className="form-control" placeholder="Search employee..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ paddingLeft: 38, width: '100%' }} />
+              </div>
                   <button className={`btn ${attendanceView === 'daily' ? '' : 'btn-secondary'} hover-lift`} onClick={() => setAttendanceView('daily')}>Daily Logs</button>
                   <button className={`btn ${attendanceView === 'monthly' ? '' : 'btn-secondary'} hover-lift`} onClick={() => setAttendanceView('monthly')}>Monthly Payroll Summary</button>
                   <input className="form-control" style={{ width: 'auto' }} type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
@@ -1134,6 +1181,62 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
             </>
           )}
 
+          {/* --- EXPENSES TAB --- */}
+          {activeNav === "expenses" && (
+            <>
+              <div className="page-header">
+                <div>
+                  <h1 className="page-title">Expense & Reimbursements</h1>
+                  <p style={{ color: 'var(--text-muted)', fontSize: 16, marginTop: 4, fontWeight: 500 }}>Review and approve employee expenses.</p>
+                </div>
+              </div>
+
+              <div className="table-wrapper">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Employee</th>
+                      <th>Claim Details</th>
+                      <th>Amount</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredExpenses.length === 0 ? (
+                      <tr><td colSpan="5" style={{ textAlign: 'center', padding: '60px', color: 'var(--text-muted)' }}>No expense claims pending.</td></tr>
+                    ) : (
+                      filteredExpenses.map((exp) => (
+                        <tr key={exp.id}>
+                          <td>
+                            <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: 16 }}>{exp.employee_name}</div>
+                            <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: 4 }}>{exp.emp_code}</div>
+                          </td>
+                          <td>
+                            <div style={{ fontSize: 14, fontWeight: 600 }}>{exp.title}</div>
+                            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 6 }}>{exp.description || 'No description'}</div>
+                          </td>
+                          <td><span style={{ fontWeight: 800, color: 'var(--primary)', fontSize: 16 }}>₹{exp.amount}</span></td>
+                          <td>{getStatusBadge(exp.status)}</td>
+                          <td>
+                            {exp.status === 'PENDING' ? (
+                              <div style={{ display: 'flex', gap: 10 }}>
+                                <button className="btn" style={{ padding: '8px 12px', background: 'var(--success)' }} onClick={async () => { await api.put(`/expenses/${exp.id}/status`, { status: 'APPROVED' }); loadData(); }}><Check size={16} /> Approve</button>
+                                <button className="btn" style={{ padding: '8px 12px', background: 'var(--danger)' }} onClick={async () => { await api.put(`/expenses/${exp.id}/status`, { status: 'REJECTED' }); loadData(); }}><X size={16} /> Reject</button>
+                              </div>
+                            ) : (
+                              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-muted)', background: 'var(--bg-hover)', padding: '6px 12px', borderRadius: 8 }}>Processed</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
           {/* --- PAYSLIPS TAB --- */}
           {activeNav === "payslips" && (
             <>
@@ -1218,7 +1321,11 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                   <h1 className="page-title">Employee Directory</h1>
                   <p style={{ color: 'var(--text-muted)', fontSize: 16, marginTop: 4, fontWeight: 500 }}>Manage workforce access.</p>
                 </div>
-                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+              <div style={{ position: 'relative', minWidth: '260px' }}>
+                <Search size={18} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                <input type="text" className="form-control" placeholder="Search by name or code..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ paddingLeft: 38, width: '100%', height: '48px' }} />
+              </div>
                   <button className="btn" style={{ padding: '14px 24px', fontSize: 16 }} onClick={() => setIsAddEmpModalOpen(true)}>
                     <UserPlus size={20} /> Onboard New Employee
                   </button>
@@ -1323,6 +1430,39 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                           </span>
                         ))}
                       </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Office Geofencing Settings */}
+                <div className="card card-entrance">
+                  <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 10 }}><MapPin size={20} color="var(--danger)"/> Office Geofencing (GPS Lock)</h3>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0, fontWeight: 500 }}>Restrict employee mobile punches to a specific radius around these office coordinates.</p>
+                    
+                    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                      <div className="form-group" style={{ flex: 1, minWidth: '120px', marginBottom: 0 }}>
+                        <label className="form-label">Latitude</label>
+                        <input type="number" step="any" className="form-control" value={officeLat} onChange={(e) => setOfficeLat(e.target.value)} placeholder="e.g. 28.6139" />
+                      </div>
+                      <div className="form-group" style={{ flex: 1, minWidth: '120px', marginBottom: 0 }}>
+                        <label className="form-label">Longitude</label>
+                        <input type="number" step="any" className="form-control" value={officeLng} onChange={(e) => setOfficeLng(e.target.value)} placeholder="e.g. 77.2090" />
+                      </div>
+                      <div className="form-group" style={{ flex: 1, minWidth: '100px', marginBottom: 0 }}>
+                        <label className="form-label">Radius (m)</label>
+                        <input type="number" className="form-control" value={geofenceRadius} onChange={(e) => setGeofenceRadius(e.target.value)} placeholder="e.g. 50" />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+                      <button className="btn btn-secondary" style={{ flex: 1, fontSize: 13, padding: '10px' }} onClick={handleGetCurrentLocation}>
+                        <MapPin size={16} style={{ marginRight: 6 }}/> Get My Location
+                      </button>
+                      <button className="btn" style={{ flex: 1, fontSize: 13, padding: '10px' }} onClick={handleSaveGeofence}>
+                        Save Coordinates
+                      </button>
                     </div>
                   </div>
                 </div>
