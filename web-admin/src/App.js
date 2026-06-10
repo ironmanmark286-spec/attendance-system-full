@@ -131,6 +131,9 @@ const GlobalDesignOverrides = () => (
       padding: 12px 16px !important; /* Proper internal spacing */
       border-radius: 12px !important;
       margin: 0 !important; /* Prevent overlap */
+      white-space: nowrap !important; /* Text ko 1 line mein force karne ke liye */
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
     }
 
   /* Modern Invisible Scrollbars */
