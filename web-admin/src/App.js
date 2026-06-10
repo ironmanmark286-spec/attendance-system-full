@@ -51,6 +51,9 @@ const GlobalDesignOverrides = () => (
       border: 1px solid var(--border) !important;
       backdrop-filter: blur(24px) !important;
       box-shadow: 0 10px 40px -10px rgba(0,0,0,0.05) !important;
+      display: flex;
+      flex-direction: column;
+      padding: 24px 16px 16px 16px !important; /* Bottom padding fixed & reduced */
     }
     
     .topbar {
@@ -95,6 +98,126 @@ const GlobalDesignOverrides = () => (
       align-items: center;
       gap: 16px;
     }
+
+    /* Sidebar Navigation Perfect Alignment */
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 8px;
+    }
+
+    .nav-menu {
+      display: flex;
+      flex-direction: column;
+      gap: 6px; /* Perfect gap between tabs */
+      margin: 24px 0 12px 0;
+    }
+
+    .sidebar-footer {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: -4px; /* Reduced bottom space near Sign Out */
+    }
+
+    .nav-item {
+      display: flex !important;
+      align-items: center !important;
+      gap: 12px !important; /* Precise spacing between Icon and Text */
+      width: 100%;
+      justify-content: flex-start;
+    }
+
+  /* Modern Invisible Scrollbars */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 10px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+  }
+
+  /* Sidebar Collapsed Mode */
+  .sidebar {
+    transition: width 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), padding 0.3s !important;
+  }
+  .sidebar.collapsed {
+    width: 88px !important;
+    padding: 24px 12px 16px 12px !important;
+  }
+  .sidebar.collapsed .brand-text,
+  .sidebar.collapsed .nav-item span {
+    display: none !important;
+  }
+  .sidebar.collapsed .nav-item {
+    font-size: 0px !important; /* Smoothly hides text without breaking flex */
+    justify-content: center !important;
+    padding: 12px 0 !important;
+    gap: 0 !important;
+  }
+  .sidebar.collapsed .brand {
+    justify-content: center !important;
+    padding: 0 !important;
+  }
+  
+  /* Enhanced Active Tab Indicator */
+  .nav-item.active {
+    box-shadow: inset 4px 0 0 var(--primary) !important;
+  }
+
+  /* Skeleton Shimmer Effect */
+  @keyframes shimmer {
+    0% { background-position: -1000px 0; }
+    100% { background-position: 1000px 0; }
+  }
+  .skeleton {
+    background: linear-gradient(90deg, var(--bg-input) 25%, var(--border) 50%, var(--bg-input) 75%);
+    background-size: 1000px 100%;
+    animation: shimmer 2s infinite linear;
+    border-radius: 8px;
+  }
+
+  /* Floating Action Button (FAB) */
+  .fab-container {
+    position: fixed;
+    bottom: 120px;
+    right: 30px;
+    z-index: 9998;
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: flex-end;
+    gap: 16px;
+  }
+  .fab-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-end;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(20px);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .fab-menu.open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+  .fab-item {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--bg-card); padding: 10px 16px; border-radius: 30px;
+    border: 1px solid var(--border); box-shadow: var(--shadow-md);
+    color: var(--text-main); font-weight: 600; font-size: 14px; cursor: pointer; transition: all 0.2s;
+  }
+  .fab-item:hover { background: var(--bg-hover); transform: scale(1.05); }
 
     /* =========================================
        MOBILE RESPONSIVE DESIGN (PHONES & TABLETS)

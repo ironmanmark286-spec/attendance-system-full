@@ -63,7 +63,9 @@ import {
   Sparkles,
   CreditCard,
   Copy,
-  Building2
+  Building2,
+  Plus,
+  Gift
 } from 'lucide-react';
 import ParallaxBlobs from "../components/ParallaxBlobs";
 import ThemeToggle from "../components/ThemeToggle";
@@ -121,6 +123,8 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
   const [officeLat, setOfficeLat] = useState("");
   const [officeLng, setOfficeLng] = useState("");
   const [geofenceRadius, setGeofenceRadius] = useState(50);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isFabOpen, setIsFabOpen] = useState(false);
 
   useEffect(() => {
     const targets = [document.documentElement, document.body];
@@ -601,56 +605,56 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
   return (
     <div className="app-layout">
       {/* Sidebar */}
-      <aside className="sidebar" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <aside className={`sidebar ${isSidebarCollapsed ? 'collapsed' : ''}`} style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div className="brand">
           <div style={{ width: 40, height: 40, background: 'linear-gradient(135deg, var(--primary), #a855f7)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', boxShadow: '0 8px 16px -4px var(--primary)' }}>
             <Activity size={20} />
           </div>
-          <span style={{ fontWeight: 900, letterSpacing: '-0.5px' }}>PulseHR</span>
+          <span className="brand-text" style={{ fontWeight: 900, letterSpacing: '-0.5px' }}>PulseHR</span>
         </div>
 
         <nav className="nav-menu" style={{ flex: 1, overflowY: 'auto' }}>
-          <button className={`nav-item ${activeNav === 'overview' ? 'active' : ''}`} onClick={() => setActiveNav('overview')}>
+          <button className={`nav-item ${activeNav === 'overview' ? 'active' : ''}`} onClick={() => setActiveNav('overview')} title="Dashboard Overview">
             <LayoutDashboard size={20} /> Dashboard
           </button>
-          <button className={`nav-item ${activeNav === 'ai_insights' ? 'active' : ''}`} onClick={() => setActiveNav('ai_insights')}>
+          <button className={`nav-item ${activeNav === 'ai_insights' ? 'active' : ''}`} onClick={() => setActiveNav('ai_insights')} title="Pulse AI Insights">
             <BrainCircuit size={20} /> AI Insights <span style={{fontSize: 10, background: '#a855f7', color: '#fff', padding: '2px 6px', borderRadius: 4, marginLeft: 'auto'}}>NEW</span>
           </button>
-          <button className={`nav-item ${activeNav === 'attendance' ? 'active' : ''}`} onClick={() => setActiveNav('attendance')}>
+          <button className={`nav-item ${activeNav === 'attendance' ? 'active' : ''}`} onClick={() => setActiveNav('attendance')} title="Attendance Logs">
             <Clock size={20} /> Attendance Logs
           </button>
-          <button className={`nav-item ${activeNav === 'leaves' ? 'active' : ''}`} onClick={() => setActiveNav('leaves')}>
+          <button className={`nav-item ${activeNav === 'leaves' ? 'active' : ''}`} onClick={() => setActiveNav('leaves')} title="Leave Approvals">
             <CalendarDays size={20} /> Leave Requests
           </button>
-          <button className={`nav-item ${activeNav === 'expenses' ? 'active' : ''}`} onClick={() => setActiveNav('expenses')}>
+          <button className={`nav-item ${activeNav === 'expenses' ? 'active' : ''}`} onClick={() => setActiveNav('expenses')} title="Expense & Reimbursements">
             <CreditCard size={20} /> Reimbursements
           </button>
-          <button className={`nav-item ${activeNav === 'payslips' ? 'active' : ''}`} onClick={() => setActiveNav('payslips')}>
+          <button className={`nav-item ${activeNav === 'payslips' ? 'active' : ''}`} onClick={() => setActiveNav('payslips')} title="Payroll & Payslips">
             <Receipt size={20} /> Payroll & Payslips
           </button>
-          <button className={`nav-item ${activeNav === 'helpdesk' ? 'active' : ''}`} onClick={() => setActiveNav('helpdesk')}>
+          <button className={`nav-item ${activeNav === 'helpdesk' ? 'active' : ''}`} onClick={() => setActiveNav('helpdesk')} title="Support Helpdesk">
             <Headset size={20} /> Support Helpdesk
           </button>
-          <button className={`nav-item ${activeNav === 'employees' ? 'active' : ''}`} onClick={() => setActiveNav('employees')}>
+          <button className={`nav-item ${activeNav === 'employees' ? 'active' : ''}`} onClick={() => setActiveNav('employees')} title="Employee Directory">
             <Users size={20} /> Employee Directory
           </button>
-          <button className={`nav-item ${activeNav === 'settings' ? 'active' : ''}`} onClick={() => setActiveNav('settings')}>
+          <button className={`nav-item ${activeNav === 'settings' ? 'active' : ''}`} onClick={() => setActiveNav('settings')} title="Settings & Preferences">
             <Settings size={20} /> Settings & Preferences
           </button>
-          <button className={`nav-item ${activeNav === 'ot_settings' ? 'active' : ''}`} onClick={() => setActiveNav('ot_settings')}>
+          <button className={`nav-item ${activeNav === 'ot_settings' ? 'active' : ''}`} onClick={() => setActiveNav('ot_settings')} title="Overtime Settings">
             <Zap size={20} /> Overtime Settings
           </button>
-          <button className="nav-item" onClick={() => window.location.href = '/billing'} style={{ color: 'var(--primary)', border: '1px solid var(--primary)' }}>
+          <button className="nav-item" onClick={() => window.location.href = '/billing'} style={{ color: 'var(--primary)', border: '1px solid var(--primary)' }} title="Upgrade Subscription Plan">
             <CreditCard size={20} /> Upgrade Plan
           </button>
         </nav>
 
         <div className="sidebar-footer" style={{ marginTop: 'auto' }}>
-          <button className="nav-item" onClick={onToggleTheme}>
+          <button className="nav-item" onClick={onToggleTheme} title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}>
             {theme === "dark" ? <Sun size={20} /> : <Moon size={20} />} 
             {theme === "dark" ? "Light Mode" : "Dark Mode"}
           </button>
-          <button className="nav-item" onClick={logout} style={{ color: 'var(--danger)' }}>
+          <button className="nav-item" onClick={logout} style={{ color: 'var(--danger)' }} title="Sign Out Securely">
             <LogOut size={20} /> Sign Out
           </button>
         </div>
@@ -674,15 +678,20 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
         
         {/* Topbar */}
         <header className="topbar">
-          <div className="search-box">
-            <Search size={18} color="var(--text-muted)" />
-            <input 
-              type="text" 
-              className="search-input" 
-              placeholder="Search employees by name or code..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1 }}>
+            <button className="btn btn-secondary hover-lift" style={{ padding: 10, borderRadius: 8 }} onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} title="Toggle Sidebar">
+              <Layout size={20} />
+            </button>
+            <div className="search-box" style={{ maxWidth: 400, width: '100%' }}>
+              <Search size={18} color="var(--text-muted)" />
+              <input 
+                type="text" 
+                className="search-input" 
+                placeholder="Search employees by name or code..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
           </div>
 
           <div className="user-profile">
@@ -738,24 +747,30 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                   
                   <AnimatedHero greeting={greeting} name={stats.adminName} company={`${stats.companyName} ${stats.companyCode ? `(${stats.companyCode})` : ''}`} stats={stats} />
                   
-                  <div className="fade-in-up stagger-5" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginTop: 'auto', position: 'relative', zIndex: 1 }}>
-                    <div className="hover-lift" style={{ background: 'var(--bg-app)', border: '1px solid var(--border)', padding: 20, borderRadius: 20 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--text-muted)' }}>Total</div>
-                      <div style={{ fontSize: 32, fontWeight: 900, marginTop: 4, color: 'var(--text-main)' }}>{stats.total}</div>
+                  {loading ? (
+                    <div className="fade-in-up stagger-5" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginTop: 'auto', position: 'relative', zIndex: 1 }}>
+                      {[1, 2, 3, 4].map(i => <div key={i} className="skeleton" style={{ height: 90, borderRadius: 20, border: '1px solid var(--border)' }}></div>)}
                     </div>
-                    <div className="hover-lift" style={{ background: 'var(--bg-app)', border: '1px solid var(--border)', borderTop: '4px solid var(--success)', padding: 20, borderRadius: 20 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--text-muted)' }}>Present</div>
-                      <div style={{ fontSize: 32, fontWeight: 900, marginTop: 4, color: 'var(--text-main)' }}>{stats.present}</div>
+                  ) : (
+                    <div className="fade-in-up stagger-5" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginTop: 'auto', position: 'relative', zIndex: 1 }}>
+                      <div className="hover-lift" style={{ background: 'var(--bg-app)', border: '1px solid var(--border)', padding: 20, borderRadius: 20 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--text-muted)' }}>Total</div>
+                        <div style={{ fontSize: 32, fontWeight: 900, marginTop: 4, color: 'var(--text-main)' }}>{stats.total}</div>
+                      </div>
+                      <div className="hover-lift" style={{ background: 'var(--bg-app)', border: '1px solid var(--border)', borderTop: '4px solid var(--success)', padding: 20, borderRadius: 20 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--text-muted)' }}>Present</div>
+                        <div style={{ fontSize: 32, fontWeight: 900, marginTop: 4, color: 'var(--text-main)' }}>{stats.present}</div>
+                      </div>
+                      <div className="hover-lift" style={{ background: 'var(--bg-app)', border: '1px solid var(--border)', borderTop: '4px solid var(--warning)', padding: 20, borderRadius: 20 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--text-muted)' }}>Late</div>
+                        <div style={{ fontSize: 32, fontWeight: 900, marginTop: 4, color: 'var(--text-main)' }}>{stats.late}</div>
+                      </div>
+                      <div className="hover-lift" style={{ background: 'var(--bg-app)', border: '1px solid var(--border)', borderTop: '4px solid var(--danger)', padding: 20, borderRadius: 20 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--text-muted)' }}>Absent</div>
+                        <div style={{ fontSize: 32, fontWeight: 900, marginTop: 4, color: 'var(--text-main)' }}>{stats.absent}</div>
+                      </div>
                     </div>
-                    <div className="hover-lift" style={{ background: 'var(--bg-app)', border: '1px solid var(--border)', borderTop: '4px solid var(--warning)', padding: 20, borderRadius: 20 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--text-muted)' }}>Late</div>
-                      <div style={{ fontSize: 32, fontWeight: 900, marginTop: 4, color: 'var(--text-main)' }}>{stats.late}</div>
-                    </div>
-                    <div className="hover-lift" style={{ background: 'var(--bg-app)', border: '1px solid var(--border)', borderTop: '4px solid var(--danger)', padding: 20, borderRadius: 20 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--text-muted)' }}>Absent</div>
-                      <div style={{ fontSize: 32, fontWeight: 900, marginTop: 4, color: 'var(--text-main)' }}>{stats.absent}</div>
-                    </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* BENTO 2: Top Performer Gamification (Span 4) */}
@@ -871,13 +886,46 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                     )) : <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px 0' }}>No notices published yet.</div>}
                   </div>
                 </div>
+
+                {/* BENTO 8: Celebrations Widget (Span 4) */}
+                <div className="fade-in-up stagger-7 hover-lift" style={{ ...bentoCardStyle, gridColumn: 'span 4', background: 'linear-gradient(135deg, rgba(236, 72, 153, 0.05), rgba(244, 63, 94, 0.02))', borderColor: 'rgba(236, 72, 153, 0.2)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                    <h3 style={{ fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, color: '#ec4899' }}><Gift size={20} /> Celebrations</h3>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'var(--bg-card)', padding: 12, borderRadius: 12, border: '1px solid var(--border)' }}>
+                      <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#ec4899', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>R</div>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 14 }}>Rahul Sharma</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Birthday Today! 🎂</div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'var(--bg-card)', padding: 12, borderRadius: 12, border: '1px solid var(--border)' }}>
+                      <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>P</div>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 14 }}>Priya Singh</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>2nd Work Anniversary 🎉</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* --- Quick Insights Row (New Feature) --- */}
               <div className="fade-in-up stagger-7" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginTop: 12, marginBottom: 40 }}>
-                <InsightCard title="Avg Check-in" subtitle="Last 7 days" value={rows.length ? (Math.round((rows.reduce((s, r) => s + (r.check_in ? 1 : 0), 0) / Math.max(rows.length,1)) * 100) + '%') : '—'} change={3} data={[60,62,58,65,70,68,72]} color="#06b6d4" icon={<Clock size={18} />} />
-                <InsightCard title="Overtime Today" subtitle="Minutes" value={stats.overtime_minutes || '0'} change={-8} data={[5,10,0,20,35,25,18]} color="#f59e0b" icon={<Zap size={18} />} />
-                <InsightCard title="Engagement" subtitle="Team Sentiment" value={Math.round((Math.random()*20)+80) + '%'} change={2} data={[82,85,84,88,90,89,91]} color="#10b981" icon={<Sparkles size={18} />} />
+                {loading ? (
+                  <>
+                    <div className="skeleton" style={{ height: 120, borderRadius: 20 }}></div>
+                    <div className="skeleton" style={{ height: 120, borderRadius: 20 }}></div>
+                    <div className="skeleton" style={{ height: 120, borderRadius: 20 }}></div>
+                  </>
+                ) : (
+                  <>
+                    <InsightCard title="Avg Check-in" subtitle="Last 7 days" value={rows.length ? (Math.round((rows.reduce((s, r) => s + (r.check_in ? 1 : 0), 0) / Math.max(rows.length,1)) * 100) + '%') : '—'} change={3} data={[60,62,58,65,70,68,72]} color="#06b6d4" icon={<Clock size={18} />} />
+                    <InsightCard title="Overtime Today" subtitle="Minutes" value={stats.overtime_minutes || '0'} change={-8} data={[5,10,0,20,35,25,18]} color="#f59e0b" icon={<Zap size={18} />} />
+                    <InsightCard title="Engagement" subtitle="Team Sentiment" value={Math.round((Math.random()*20)+80) + '%'} change={2} data={[82,85,84,88,90,89,91]} color="#10b981" icon={<Sparkles size={18} />} />
+                  </>
+                )}
               </div>
             </>
           )}
@@ -1892,6 +1940,35 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
           </div>
         </div>
       )}
+
+      {/* Quick Action FAB */}
+      <div className="fab-container">
+        <div className={`fab-menu ${isFabOpen ? 'open' : ''}`}>
+          <button className="fab-item" onClick={() => { setActiveNav('employees'); setIsAddEmpModalOpen(true); setIsFabOpen(false); }}>
+            <span>Add Employee</span>
+            <div style={{ background: 'var(--primary-bg)', padding: 8, borderRadius: '50%', color: 'var(--primary)' }}><UserPlus size={16} /></div>
+          </button>
+          <button className="fab-item" onClick={() => { setIsNoticeModalOpen(true); setIsFabOpen(false); }}>
+            <span>Create Notice</span>
+            <div style={{ background: 'var(--warning-bg)', padding: 8, borderRadius: '50%', color: 'var(--warning)' }}><Megaphone size={16} /></div>
+          </button>
+          <button className="fab-item" onClick={() => { setActiveNav('payslips'); setIsUploadSlipModalOpen(true); setIsFabOpen(false); }}>
+            <span>Upload Payslip</span>
+            <div style={{ background: 'var(--success-bg)', padding: 8, borderRadius: '50%', color: 'var(--success)' }}><Receipt size={16} /></div>
+          </button>
+        </div>
+        <button 
+          onClick={() => setIsFabOpen(!isFabOpen)}
+          style={{
+            width: 56, height: 56, borderRadius: '50%', background: 'var(--primary)', color: '#fff', 
+            border: 'none', cursor: 'pointer', boxShadow: '0 8px 20px rgba(99, 102, 241, 0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'transform 0.3s',
+            transform: isFabOpen ? 'rotate(45deg)' : 'rotate(0deg)'
+          }}
+        >
+          <Plus size={28} />
+        </button>
+      </div>
 
       {/* AI Copilot Widget */}
       <div style={{ position: 'fixed', bottom: 30, right: 30, zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
