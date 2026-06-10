@@ -53,7 +53,7 @@ const GlobalDesignOverrides = () => (
       box-shadow: 0 10px 40px -10px rgba(0,0,0,0.05) !important;
       display: flex;
       flex-direction: column;
-      padding: 24px 16px 16px 16px !important; /* Bottom padding fixed & reduced */
+      padding: 24px 16px 12px 16px !important; /* Bottom padding fixed & reduced */
     }
     
     .topbar {
@@ -110,15 +110,16 @@ const GlobalDesignOverrides = () => (
     .nav-menu {
       display: flex;
       flex-direction: column;
-      gap: 6px; /* Perfect gap between tabs */
-      margin: 24px 0 12px 0;
+      gap: 10px !important; /* Perfect gap between tabs */
+      margin: 20px 0 12px 0;
+      padding-bottom: 8px; /* Extra space before footer */
     }
 
     .sidebar-footer {
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      margin-bottom: -4px; /* Reduced bottom space near Sign Out */
+      gap: 8px !important;
+      margin-bottom: 0 !important; /* Reduced bottom space near Sign Out */
     }
 
     .nav-item {
@@ -127,6 +128,9 @@ const GlobalDesignOverrides = () => (
       gap: 12px !important; /* Precise spacing between Icon and Text */
       width: 100%;
       justify-content: flex-start;
+      padding: 12px 16px !important; /* Proper internal spacing */
+      border-radius: 12px !important;
+      margin: 0 !important; /* Prevent overlap */
     }
 
   /* Modern Invisible Scrollbars */
