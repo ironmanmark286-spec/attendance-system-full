@@ -335,7 +335,51 @@ const GlobalDesignOverrides = () => (
         justify-content: space-between;
       }
 
+      /* Global Mobile Fixes for Overlapping and Spacing */
+      * {
+        box-sizing: border-box !important;
+      }
+      
+      body, html {
+        overflow-x: hidden !important;
+      }
+      
+      .main-content {
+        padding: 8px !important;
+        width: 100% !important;
+        max-width: 100vw !important;
+        overflow-x: hidden !important;
+      }
+      
+      .page-container {
+        padding: 16px 8px !important;
+        width: 100% !important;
+        max-width: 100vw !important;
+      }
+
+      /* Fix Bento Cards, Modals, and all padding/margin issues */
+      .card, div[style*="padding: 32px"], div[style*="padding: 60px"], div[style*="padding: 40px"] {
+        padding: 16px !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+      }
+
+      /* Force wrap on flex rows that are too wide */
+      div[style*="display: flex"] {
+        max-width: 100%;
+      }
+      
+      div[style*="gap: 16px"], div[style*="gap: 24px"], .user-profile, .page-header {
+        flex-wrap: wrap !important;
+      }
+      
+      .main-content > div, .card > div, .hover-lift {
+        max-width: 100%;
+        min-width: 0 !important;
+      }
+      
       /* Dashboard Grids to Single Column */
+      div[style*="display: grid"],
       div[style*="gridTemplateColumns"], 
       div[style*="grid-template-columns"],
       .stats-grid,
@@ -344,6 +388,12 @@ const GlobalDesignOverrides = () => (
         display: flex !important;
         flex-direction: column !important;
         gap: 16px !important;
+      }
+
+      h1, h2, h3, h4, h5, h6, .brand-text {
+        word-wrap: break-word;
+        white-space: normal !important;
+        line-height: 1.3 !important;
       }
       
       .recharts-responsive-container {
