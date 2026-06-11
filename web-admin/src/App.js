@@ -232,41 +232,98 @@ const GlobalDesignOverrides = () => (
     @media (max-width: 992px) {
       .app-layout {
         flex-direction: column !important;
-        padding: 8px !important;
+        padding: 8px 8px 100px 8px !important; /* Bottom padding for fixed bottom nav */
+        min-height: 100vh;
       }
       
+      /* Fixed Bottom Navigation */
       .sidebar {
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
         width: 100% !important;
         height: auto !important;
+        min-height: 72px !important;
         flex-direction: row !important;
-        padding: 10px !important;
-        margin-bottom: 8px !important;
+        padding: 8px 12px !important;
+        margin: 0 !important;
+        border-radius: 24px 24px 0 0 !important;
+        z-index: 9999 !important;
         overflow-x: auto;
+        overflow-y: hidden !important;
+        -webkit-overflow-scrolling: touch;
+        justify-content: flex-start !important;
+        box-shadow: 0 -10px 40px -10px rgba(0,0,0,0.1) !important;
       }
       
       .sidebar .brand {
-        display: none !important; /* Phone me logo text hide karein */
+        display: none !important; /* Hide logo text on phone */
+      }
+      
+      .sidebar-footer {
+        display: flex !important;
+        flex-direction: row !important;
+        gap: 4px !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: max-content !important;
+        border-left: 1px solid var(--border);
+        padding-left: 4px !important;
+        margin-left: 4px !important;
       }
       
       .nav-menu {
         flex-direction: row !important;
-        gap: 8px;
-        overflow-x: auto;
+        gap: 4px !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: max-content !important;
+        justify-content: flex-start !important;
       }
       
       .nav-item {
-        flex: 0 0 auto;
-        padding: 8px 16px !important;
+        flex: 0 0 72px !important;
+        width: 72px !important;
+        flex-direction: column !important;
+        padding: 8px 4px !important;
+        gap: 6px !important;
+        border-radius: 12px !important;
+        justify-content: flex-start !important;
+        font-size: 10px !important;
+        font-weight: 600 !important;
+      }
+
+      .nav-item span {
+        font-size: 10px !important;
+        display: block !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        text-align: center !important;
+        width: 100%;
+      }
+
+      .nav-item svg, .nav-item i {
+        width: 20px !important;
+        height: 20px !important;
+        margin: 0 auto !important;
+      }
+
+      .nav-item.active {
+        box-shadow: inset 0 -3px 0 var(--primary) !important;
+        background: var(--primary-bg, rgba(99, 102, 241, 0.1)) !important;
       }
       
-      .sidebar-footer {
-        display: none !important;
-      }
-      
+      /* Topbar Mobile Adjustments */
       .topbar {
         flex-direction: column;
         gap: 16px;
         padding: 16px !important;
+      }
+      
+      .topbar > div:first-child > button:first-child {
+        display: none !important; /* Hide sidebar toggle on mobile */
       }
       
       .search-box {
@@ -276,20 +333,46 @@ const GlobalDesignOverrides = () => (
       .user-profile {
         width: 100%;
         justify-content: space-between;
-        overflow-x: auto;
       }
 
-      /* Dashboard Grids ko Single Column banayein */
+      /* Dashboard Grids to Single Column */
       div[style*="gridTemplateColumns"], 
-      div[style*="grid-template-columns"] {
+      div[style*="grid-template-columns"],
+      .stats-grid,
+      .insight-grid,
+      .charts-grid {
         display: flex !important;
         flex-direction: column !important;
         gap: 16px !important;
       }
       
+      .recharts-responsive-container {
+        width: 100% !important;
+        min-width: 0 !important;
+      }
+      
       .table-wrapper, .table-container {
         overflow-x: auto;
         width: 100%;
+      }
+
+      /* Adjust FAB to sit above bottom nav */
+      .fab-container {
+        bottom: 90px !important;
+        right: 16px !important;
+      }
+      
+      /* Modals */
+      .modal-content, .modal-box {
+        width: 95% !important;
+        max-width: 95% !important;
+        margin: 10px auto !important;
+        padding: 20px 16px !important;
+      }
+      
+      .page-header {
+        flex-direction: column;
+        align-items: flex-start;
       }
     }
   `}</style>
