@@ -553,9 +553,11 @@ function AppContent() {
 
         if (geofence && type === 'In' && effectiveDistance > geofence.radius) {
           setIsLocating(false);
+          const currentCoords = `${loc.coords.latitude.toFixed(7)}, ${loc.coords.longitude.toFixed(7)}`;
+          const officeCoords = `${geofence.officeLat}, ${geofence.officeLng}`;
           return Alert.alert(
             "Location Out of Bounds 🚫",
-            `GPS says you are ${Math.round(distance)}m away (accuracy ${Math.round(accuracy)}m).\n\nYou must be within ${geofence.radius}m to Punch In. Please move near open sky / turn on High Accuracy GPS and retry.`
+            `GPS says you are ${Math.round(distance)}m away (accuracy ${Math.round(accuracy)}m). Verified distance is about ${Math.round(effectiveDistance)}m.\n\nAllowed radius is ${geofence.radius}m.\n\nCurrent phone location:\n${currentCoords}\n\nSaved office location:\n${officeCoords}\n\nIf you are inside office, save current phone location as office point in website settings, or increase radius for testing.`
           );
         }
 
