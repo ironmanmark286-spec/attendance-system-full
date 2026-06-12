@@ -27,7 +27,13 @@
       }
     },
     "plugins": [
-      "expo-font"
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow PulseHR to select a profile picture from your photos."
+        }
+      ]
     ]
   }
 }

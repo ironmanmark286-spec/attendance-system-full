@@ -36,6 +36,13 @@ router.post("/check-in", auth, roleGuard("EMPLOYEE"), async (req, res) => {
       attId = result.insertId;
     } else {
       attId = rows[0].id;
+      const [lastLogs] = await pool.query(
+        "SELECT punch_type FROM punch_logs WHERE attendance_id = ? ORDER BY punch_time DESC LIMIT 1",
+        [attId]
+      );
+      if (lastLogs.length && lastLogs[0].punch_type === 'IN') {
+        return res.status(400).json({ message: "Already checked in. Please check out first." });
+      }
     }
 
     await pool.query(
@@ -70,6 +77,14 @@ router.post("/check-out", auth, roleGuard("EMPLOYEE"), async (req, res) => {
       return res.status(400).json({ message: "Check-in not found" });
     }
     const attId = rows[0].id;
+
+    const [lastLogs] = await pool.query(
+      "SELECT punch_type FROM punch_logs WHERE attendance_id = ? ORDER BY punch_time DESC LIMIT 1",
+      [attId]
+    );
+    if (!lastLogs.length || lastLogs[0].punch_type === 'OUT') {
+      return res.status(400).json({ message: "Already checked out or no active check-in found." });
+    }
 
     await pool.query(
       "INSERT INTO punch_logs (employee_id, attendance_id, punch_time, punch_type, location) VALUES (?, ?, ?, 'OUT', ?)",

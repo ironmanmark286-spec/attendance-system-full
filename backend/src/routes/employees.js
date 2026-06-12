@@ -1,20 +1,70 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
 const pool = require("../db");
 const auth = require("../middleware/auth");
 const roles = require("../middleware/roles");
 
 const router = express.Router();
 
+const photoStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const dir = path.join(__dirname, "../../uploads/profiles");
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    cb(null, dir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1E9);
+    cb(null, "profile-" + uniqueSuffix + path.extname(file.originalname || ".jpg"));
+  }
+});
+
+const uploadPhoto = multer({
+  storage: photoStorage,
+  limits: { fileSize: 3 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype && file.mimetype.startsWith("image/")) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only image files are allowed"));
+    }
+  }
+});
+
+let employeeColumnsReady = false;
+
+async function ensureEmployeeColumns() {
+  if (employeeColumnsReady) return;
+  let dbName = process.env.MYSQLDATABASE || process.env.DB_NAME;
+  if (!dbName) {
+    const [dbRows] = await pool.query("SELECT DATABASE() AS db_name");
+    dbName = dbRows[0]?.db_name;
+  }
+  const [rows] = await pool.query(
+    `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'employees' AND COLUMN_NAME = 'profile_photo'`,
+    [dbName]
+  );
+  if (!rows.length) {
+    await pool.query("ALTER TABLE employees ADD COLUMN profile_photo VARCHAR(255) DEFAULT NULL");
+  }
+  employeeColumnsReady = true;
+}
+
 // Current logged-in employee profile (mobile app)
 router.get("/me", auth, async (req, res) => {
   try {
+    await ensureEmployeeColumns();
     if (req.user.role !== "EMPLOYEE") {
       return res.status(403).json({ message: "Employees only" });
     }
     const empId = req.user.employee_id || req.user.id;
     const [rows] = await pool.query(
-      `SELECT e.emp_code, e.name, e.designation, e.status, e.created_at, c.settings 
+      `SELECT e.emp_code, e.name, e.designation, e.status, e.created_at, e.profile_photo, c.settings
        FROM employees e 
        JOIN companies c ON e.company_id = c.id 
        WHERE e.id = ? AND e.company_id = ?`,
@@ -33,6 +83,7 @@ router.get("/me", auth, async (req, res) => {
       department: e.designation || "General",
       status: e.status,
       created_at: e.created_at,
+      profile_photo: e.profile_photo,
       office_lat: settings.office_lat || null,
       office_lng: settings.office_lng || null,
       geofence_radius: settings.geofence_radius || 50 // default 50 meters limit
@@ -43,11 +94,47 @@ router.get("/me", auth, async (req, res) => {
   }
 });
 
+router.post("/me/photo", auth, roles("EMPLOYEE"), uploadPhoto.single("photo"), async (req, res) => {
+  try {
+    await ensureEmployeeColumns();
+    if (!req.file) {
+      return res.status(400).json({ message: "Photo is required" });
+    }
+
+    const photoPath = "/uploads/profiles/" + req.file.filename;
+    const empId = req.user.employee_id || req.user.id;
+
+    const [oldRows] = await pool.query(
+      "SELECT profile_photo FROM employees WHERE id = ? AND company_id = ?",
+      [empId, req.user.company_id]
+    );
+
+    await pool.query(
+      "UPDATE employees SET profile_photo = ? WHERE id = ? AND company_id = ?",
+      [photoPath, empId, req.user.company_id]
+    );
+
+    const oldPhoto = oldRows[0]?.profile_photo;
+    if (oldPhoto && oldPhoto.startsWith("/uploads/profiles/")) {
+      const oldPath = path.join(__dirname, "../..", oldPhoto);
+      if (fs.existsSync(oldPath)) {
+        fs.unlinkSync(oldPath);
+      }
+    }
+
+    res.json({ message: "Profile photo updated", profile_photo: photoPath });
+  } catch (err) {
+    console.error("Profile photo upload error:", err);
+    res.status(500).json({ message: "Failed to upload profile photo" });
+  }
+});
+
 // Get employees for the company
 router.get("/", auth, roles("ADMIN"), async (req, res) => {
   try {
+    await ensureEmployeeColumns();
     const [rows] = await pool.query(
-      "SELECT id, emp_code, name, status, designation, created_at FROM employees WHERE company_id = ? ORDER BY created_at DESC",
+      "SELECT id, emp_code, name, status, designation, profile_photo, created_at FROM employees WHERE company_id = ? ORDER BY created_at DESC",
       [req.user.company_id]
     );
     res.json(rows);

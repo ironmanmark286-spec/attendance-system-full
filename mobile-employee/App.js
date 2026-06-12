@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { View, Text, TextInput, Alert, StyleSheet, Animated, ScrollView, Modal, ActivityIndicator, KeyboardAvoidingView, Platform, Dimensions, TouchableOpacity, StatusBar, Linking, RefreshControl } from "react-native";
+import { View, Text, TextInput, Alert, StyleSheet, Animated, ScrollView, Modal, ActivityIndicator, KeyboardAvoidingView, Platform, Dimensions, TouchableOpacity, StatusBar, Linking, RefreshControl, AppState, Image } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import * as Location from "expo-location";
 import * as LocalAuthentication from "expo-local-authentication";
+import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, FontAwesome5, Feather } from "@expo/vector-icons";
 
@@ -21,6 +22,7 @@ const BACKEND_URL = "https://attendance-system-full.onrender.com/api"; // <-- Us
 
 const rawApiUrl = (typeof process !== 'undefined' && process.env && process.env.EXPO_PUBLIC_API_URL) ? process.env.EXPO_PUBLIC_API_URL : BACKEND_URL;
 const API_URL = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl}/api`;
+const API_ORIGIN = API_URL.replace(/\/api$/, "");
 
 const api = axios.create({
   baseURL: API_URL,
@@ -58,6 +60,12 @@ const formatMins = (mins) => {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return `${h}h ${m}m`;
+};
+
+const getFileUrl = (path) => {
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${API_ORIGIN}${path}`;
 };
 
 // SAFELY PARSE DATES (Prevents Android Hermes `Intl` crashes which freeze the app)
@@ -119,7 +127,7 @@ function AppContent() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isResetting, setIsResetting] = useState(false);
-  const [profile, setProfile] = useState({ name: "", emp_code: "", department: "", designation: "" });
+  const [profile, setProfile] = useState({ name: "", emp_code: "", department: "", designation: "", profile_photo: "" });
   
   const [theme, setTheme] = useState("light"); // Better default visibility
   const [activeTab, setActiveTab] = useState("Home");
@@ -150,8 +158,9 @@ function AppContent() {
   });
   
   const [leaveModalVisible, setLeaveModalVisible] = useState(false);
-  const [leaveForm, setLeaveForm] = useState({ start_date: '', end_date: '', leave_type: 'Annual Leave', reason: '' });
+  const [leaveForm, setLeaveForm] = useState({ start_date: '', end_date: '', leave_type: 'Annual Leave', request_type: 'FULL_DAY', start_time: '', end_time: '', is_company_work: false, reason: '' });
   const [isApplyingLeave, setIsApplyingLeave] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   
   const [myExpenses, setMyExpenses] = useState([]);
   const [expenseModalVisible, setExpenseModalVisible] = useState(false);
@@ -164,6 +173,8 @@ function AppContent() {
   const loginFadeAnim = useRef(new Animated.Value(0)).current;
   const loginSlideAnim = useRef(new Animated.Value(50)).current;
   const logoFloatAnim = useRef(new Animated.Value(0)).current;
+  const autoCheckoutInFlight = useRef(false);
+  const outsideGeofenceCount = useRef(0);
 
   useEffect(() => {
     if (!token && isAppReady) {
@@ -185,7 +196,7 @@ function AppContent() {
   const handleLogout = useCallback(async () => {
     await AsyncStorage.removeItem("token");
     setToken("");
-    setProfile({ name: "", emp_code: "", department: "", designation: "" });
+    setProfile({ name: "", emp_code: "", department: "", designation: "", profile_photo: "" });
   }, []);
 
   const loadData = useCallback(async (currentToken) => {
@@ -318,6 +329,93 @@ function AppContent() {
     await AsyncStorage.setItem("theme", nextTheme);
   };
 
+  const resolveAddress = async (loc) => {
+    try {
+      const [geocode] = await Promise.race([
+        Location.reverseGeocodeAsync({ latitude: loc.coords.latitude, longitude: loc.coords.longitude }),
+        new Promise(resolve => setTimeout(() => resolve(null), 1000))
+      ]);
+      if (geocode) {
+        return `${geocode.name || geocode.street || ''}, ${geocode.city || geocode.region || ''}`.replace(/^, /, '').trim();
+      }
+    } catch (e) {
+      console.log("Reverse geocode skipped:", e);
+    }
+    return `${loc.coords.latitude.toFixed(4)}, ${loc.coords.longitude.toFixed(4)}`;
+  };
+
+  const getFastLocation = async () => {
+    let { status } = await Location.getForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      const req = await Location.requestForegroundPermissionsAsync();
+      status = req.status;
+    }
+    if (status !== 'granted') return null;
+
+    let loc = await Location.getLastKnownPositionAsync({ maxAge: 30000, requiredAccuracy: 100 });
+    if (!loc) {
+      loc = await Promise.race([
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+        new Promise(resolve => setTimeout(() => resolve(null), 3000))
+      ]);
+    }
+    return loc;
+  };
+
+  const autoCheckoutIfOutsideGeofence = useCallback(async () => {
+    if (!token || !isPunchedIn || autoCheckoutInFlight.current) return;
+    if (!profile.office_lat || !profile.office_lng || !profile.geofence_radius) return;
+
+    try {
+      const loc = await getFastLocation();
+      if (!loc) return;
+
+      const distance = getDistanceFromLatLonInMeters(
+        loc.coords.latitude,
+        loc.coords.longitude,
+        Number(profile.office_lat),
+        Number(profile.office_lng)
+      );
+      const radius = Number(profile.geofence_radius);
+
+      if (distance <= radius) {
+        outsideGeofenceCount.current = 0;
+        return;
+      }
+
+      outsideGeofenceCount.current += 1;
+      if (outsideGeofenceCount.current < 2) return;
+
+      autoCheckoutInFlight.current = true;
+      const address = await resolveAddress(loc);
+      const { data } = await api.post(
+        "/attendance/check-out",
+        { location: `Auto checkout - left geofence (${Math.round(distance)}m): ${address}` },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setCheckOutTime(format12Hour(new Date()));
+      setIsPunchedIn(false);
+      outsideGeofenceCount.current = 0;
+      await loadData(token);
+      Alert.alert("Auto Check-out", `Aap office radius se bahar chale gaye the, isliye checkout ho gaya. Total: ${formatMins(data.totalMinutes || 0)}`);
+    } catch (e) {
+      console.log("Auto checkout error:", e?.response?.data || e.message);
+    } finally {
+      autoCheckoutInFlight.current = false;
+    }
+  }, [token, isPunchedIn, profile.office_lat, profile.office_lng, profile.geofence_radius, loadData]);
+
+  useEffect(() => {
+    if (!token || !isPunchedIn) return undefined;
+    const interval = setInterval(() => {
+      if (AppState.currentState === "active") {
+        autoCheckoutIfOutsideGeofence();
+      }
+    }, 60000);
+    autoCheckoutIfOutsideGeofence();
+    return () => clearInterval(interval);
+  }, [token, isPunchedIn, autoCheckoutIfOutsideGeofence]);
+
   const handleLocationAction = async (type) => {
     setIsLocating(true);
 
@@ -419,14 +517,61 @@ function AppContent() {
     }
   };
 
+  const uploadProfilePhoto = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (permission.status !== "granted") {
+        return Alert.alert("Permission Needed", "Please allow photo access to update your profile picture.");
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.75
+      });
+
+      if (result.canceled || !result.assets?.length) return;
+
+      const asset = result.assets[0];
+      const fileName = asset.fileName || `profile-${Date.now()}.jpg`;
+      const fileType = asset.mimeType || "image/jpeg";
+      const formData = new FormData();
+      formData.append("photo", {
+        uri: asset.uri,
+        name: fileName,
+        type: fileType
+      });
+
+      setIsUploadingPhoto(true);
+      const { data } = await api.post("/employees/me/photo", formData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "multipart/form-data"
+        }
+      });
+
+      setProfile((prev) => ({ ...prev, profile_photo: data.profile_photo }));
+      Alert.alert("Success", "Profile picture updated.");
+      await loadData(token);
+    } catch (e) {
+      Alert.alert("Upload Failed", e?.response?.data?.message || "Could not update profile picture.");
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
+
   const submitLeave = async () => {
     if (!leaveForm.start_date || !leaveForm.end_date) return Alert.alert("Error", "Provide start and end dates");
+    if (leaveForm.request_type === 'SHORT_LEAVE' && (!leaveForm.start_time || !leaveForm.end_time)) {
+      return Alert.alert("Error", "Short leave ke liye start aur end time required hai.");
+    }
     setIsApplyingLeave(true);
     try {
       await api.post("/leaves/apply", leaveForm, { headers: { Authorization: `Bearer ${token}` } });
       Alert.alert("Success", "Leave request submitted for approval");
       setLeaveModalVisible(false);
-      setLeaveForm({ start_date: '', end_date: '', leave_type: 'Annual Leave', reason: '' });
+      setLeaveForm({ start_date: '', end_date: '', leave_type: 'Annual Leave', request_type: 'FULL_DAY', start_time: '', end_time: '', is_company_work: false, reason: '' });
       loadData(token);
     } catch (e) {
       Alert.alert("Error", e?.response?.data?.message || "Failed to submit leave");
@@ -805,6 +950,21 @@ function AppContent() {
                           {safeFormatDate(new Date(leave.start_date))}  →  {safeFormatDate(new Date(leave.end_date))}
                         </Text>
                       </View>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                        <View style={[styles.badge, { backgroundColor: palette.bgInput }]}>
+                          <Text style={{ fontSize: 11, fontWeight: '800', color: palette.textPrimary }}>{(leave.request_type || 'FULL_DAY').replace('_', ' ')}</Text>
+                        </View>
+                        {leave.start_time && leave.end_time ? (
+                          <View style={[styles.badge, { backgroundColor: palette.bgInput }]}>
+                            <Text style={{ fontSize: 11, fontWeight: '800', color: palette.textPrimary }}>{String(leave.start_time).slice(0, 5)} - {String(leave.end_time).slice(0, 5)}</Text>
+                          </View>
+                        ) : null}
+                        {leave.is_company_work ? (
+                          <View style={[styles.badge, { backgroundColor: 'rgba(59,130,246,0.15)' }]}>
+                            <Text style={{ fontSize: 11, fontWeight: '800', color: palette.primary }}>COMPANY WORK</Text>
+                          </View>
+                        ) : null}
+                      </View>
                       {leave.reason ? <Text style={{ color: palette.textSecondary, fontSize: 14, fontStyle: 'italic', backgroundColor: palette.bgInput, padding: 12, borderRadius: 8 }}>"{leave.reason}"</Text> : null}
                     </View>
                   ))
@@ -1034,12 +1194,20 @@ function AppContent() {
               {/* Premium Hero Identity Card */}
               <LinearGradient colors={['#4f46e5', '#7c3aed']} style={{ borderRadius: 32, padding: 32, alignItems: 'center', marginBottom: 28, elevation: 12, shadowColor: '#4f46e5', shadowOffset: {width: 0, height: 10}, shadowOpacity: 0.3, shadowRadius: 20 }} start={{x:0, y:0}} end={{x:1, y:1}}>
                 <View style={{ width: 100, height: 100, borderRadius: 50, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginBottom: 16, borderWidth: 2, borderColor: 'rgba(255,255,255,0.5)' }}>
-                  <Text style={{ fontSize: 40, fontWeight: '900', color: '#fff' }}>{profile.name ? profile.name.charAt(0).toUpperCase() : "E"}</Text>
+                  {profile.profile_photo ? (
+                    <Image source={{ uri: getFileUrl(profile.profile_photo) }} style={{ width: 96, height: 96, borderRadius: 48 }} />
+                  ) : (
+                    <Text style={{ fontSize: 40, fontWeight: '900', color: '#fff' }}>{profile.name ? profile.name.charAt(0).toUpperCase() : "E"}</Text>
+                  )}
                 </View>
                 <Text style={{ fontSize: 26, fontWeight: '800', color: '#fff', marginBottom: 6, textAlign: 'center' }}>{profile.name}</Text>
                 <View style={{ backgroundColor: 'rgba(255,255,255,0.25)', paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20 }}>
                   <Text style={{ color: '#fff', fontWeight: '800', fontSize: 14, letterSpacing: 1 }}>{profile.emp_code}</Text>
                 </View>
+                <TouchableOpacity onPress={uploadProfilePhoto} disabled={isUploadingPhoto} style={{ marginTop: 18, backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 18, flexDirection: 'row', alignItems: 'center' }}>
+                  {isUploadingPhoto ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="camera" size={18} color="#fff" />}
+                  <Text style={{ color: '#fff', fontWeight: '800', marginLeft: 8 }}>{isUploadingPhoto ? "Uploading..." : "Change Photo"}</Text>
+                </TouchableOpacity>
               </LinearGradient>
 
               <Text style={[styles.sectionTitle, { color: palette.textPrimary }]}>Professional Details</Text>
@@ -1180,6 +1348,24 @@ function AppContent() {
               </View>
 
               <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: palette.textSecondary }]}>Request Category</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {[
+                    { key: 'FULL_DAY', label: 'Full Day' },
+                    { key: 'HALF_DAY', label: 'Half Day' },
+                    { key: 'SHORT_LEAVE', label: 'Short' }
+                  ].map((item) => {
+                    const active = leaveForm.request_type === item.key;
+                    return (
+                      <TouchableOpacity key={item.key} onPress={() => setLeaveForm({ ...leaveForm, request_type: item.key, leave_type: item.key === 'SHORT_LEAVE' ? 'Short Leave' : item.key === 'HALF_DAY' ? 'Half Day' : 'Annual Leave' })} style={{ flex: 1, paddingVertical: 12, borderRadius: 14, alignItems: 'center', backgroundColor: active ? palette.primary : palette.bgInput, borderWidth: 1, borderColor: active ? palette.primary : palette.border }}>
+                        <Text style={{ color: active ? '#fff' : palette.textPrimary, fontWeight: '800', fontSize: 12 }}>{item.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
                 <Text style={[styles.inputLabel, { color: palette.textSecondary }]}>Start Date (YYYY-MM-DD)</Text>
                 <TextInput style={[styles.modalInput, { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.bgInput }]} placeholder="2024-05-15" placeholderTextColor={palette.textSecondary} value={leaveForm.start_date} onChangeText={(t) => setLeaveForm({...leaveForm, start_date: t})} />
               </View>
@@ -1193,6 +1379,24 @@ function AppContent() {
                 <Text style={[styles.inputLabel, { color: palette.textSecondary }]}>Leave Type</Text>
                 <TextInput style={[styles.modalInput, { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.bgInput }]} value={leaveForm.leave_type} onChangeText={(t) => setLeaveForm({...leaveForm, leave_type: t})} />
               </View>
+
+              {(leaveForm.request_type === 'SHORT_LEAVE' || leaveForm.request_type === 'HALF_DAY') && (
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <View style={[styles.inputGroup, { flex: 1 }]}>
+                    <Text style={[styles.inputLabel, { color: palette.textSecondary }]}>From Time</Text>
+                    <TextInput style={[styles.modalInput, { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.bgInput }]} placeholder="14:00" placeholderTextColor={palette.textSecondary} value={leaveForm.start_time} onChangeText={(t) => setLeaveForm({...leaveForm, start_time: t})} />
+                  </View>
+                  <View style={[styles.inputGroup, { flex: 1 }]}>
+                    <Text style={[styles.inputLabel, { color: palette.textSecondary }]}>To Time</Text>
+                    <TextInput style={[styles.modalInput, { color: palette.textPrimary, borderColor: palette.border, backgroundColor: palette.bgInput }]} placeholder="16:00" placeholderTextColor={palette.textSecondary} value={leaveForm.end_time} onChangeText={(t) => setLeaveForm({...leaveForm, end_time: t})} />
+                  </View>
+                </View>
+              )}
+
+              <TouchableOpacity activeOpacity={0.85} onPress={() => setLeaveForm({ ...leaveForm, is_company_work: !leaveForm.is_company_work })} style={{ flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 16, backgroundColor: palette.bgInput, borderWidth: 1, borderColor: palette.border, marginBottom: 18 }}>
+                <Ionicons name={leaveForm.is_company_work ? "checkbox" : "square-outline"} size={22} color={leaveForm.is_company_work ? palette.primary : palette.textSecondary} />
+                <Text style={{ marginLeft: 10, color: palette.textPrimary, fontWeight: '800', flex: 1 }}>Company work ke liye bahar ja raha hoon</Text>
+              </TouchableOpacity>
 
               <View style={styles.inputGroup}>
                 <Text style={[styles.inputLabel, { color: palette.textSecondary }]}>Reason</Text>

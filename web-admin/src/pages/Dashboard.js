@@ -215,6 +215,22 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
     return `${h}h ${m}m`;
   };
 
+  const fileUrl = (path) => {
+    if (!path) return null;
+    if (/^https?:\/\//i.test(path)) return path;
+    return `${BACKEND_URL}${path}`;
+  };
+
+  const getAwayMinutes = (punches = []) => {
+    let away = 0;
+    for (let i = 0; i < punches.length - 1; i += 1) {
+      if (punches[i].punch_type === "OUT" && punches[i + 1].punch_type === "IN") {
+        away += Math.max(0, Math.floor((new Date(punches[i + 1].punch_time) - new Date(punches[i].punch_time)) / 60000));
+      }
+    }
+    return away;
+  };
+
   const downloadCsv = async () => {
     const res = await api.get(`/attendance/report/monthly?month=${month}`, { responseType: "blob" });
     const url = window.URL.createObjectURL(new Blob([res.data]));
@@ -637,7 +653,7 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
             <Clock size={20} /> Attendance Logs
           </button>
           <button className={`nav-item ${activeNav === 'leaves' ? 'active' : ''}`} onClick={() => {setActiveNav('leaves'); if(window.innerWidth <= 992) setIsSidebarCollapsed(false);}} title="Leave Approvals">
-            <CalendarDays size={20} /> Leave Requests
+            <CalendarDays size={20} /> Leave / Short Leave
           </button>
           <button className={`nav-item ${activeNav === 'expenses' ? 'active' : ''}`} onClick={() => {setActiveNav('expenses'); if(window.innerWidth <= 992) setIsSidebarCollapsed(false);}} title="Expense & Reimbursements">
             <CreditCard size={20} /> Reimbursements
@@ -1131,6 +1147,11 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                           </td>
                           <td>
                             <div style={{ fontWeight: 700, fontSize: 15 }}>{formatMins(r.total_minutes)}</div>
+                            {getAwayMinutes(r.punches) > 0 && (
+                              <div style={{ fontSize: 13, color: 'var(--danger)', fontWeight: 700, marginTop: 4, display: 'inline-flex', padding: '2px 8px', background: 'var(--danger-bg)', borderRadius: 6 }}>
+                                Away: {formatMins(getAwayMinutes(r.punches))}
+                              </div>
+                            )}
                             {r.overtime_minutes > 0 && (
                               <div style={{ fontSize: 13, color: 'var(--warning)', fontWeight: 700, marginTop: 4, display: 'inline-flex', padding: '2px 8px', background: 'var(--warning-bg)', borderRadius: 6 }}>
                                 OT: {formatMins(r.overtime_minutes)}
@@ -1185,8 +1206,8 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
             <>
               <div className="page-header">
                 <div>
-                  <h1 className="page-title">Leave Approvals</h1>
-                  <p style={{ color: 'var(--text-muted)', fontSize: 16, marginTop: 4, fontWeight: 500 }}>Manage time-off requests.</p>
+                  <h1 className="page-title">Leave & Short Leave Approvals</h1>
+                  <p style={{ color: 'var(--text-muted)', fontSize: 16, marginTop: 4, fontWeight: 500 }}>Manage full day, half day, and short out-pass requests.</p>
                 </div>
               </div>
 
@@ -1214,6 +1235,18 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                           <td>
                             <div style={{ fontSize: 14, fontWeight: 600 }}>{new Date(l.start_date).toLocaleDateString()} to {new Date(l.end_date).toLocaleDateString()}</div>
                             <div style={{ fontSize: 13, color: 'var(--primary)', marginTop: 6, fontWeight: 700 }}>{l.leave_type}</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                              <span className="badge badge-info">{(l.request_type || 'FULL_DAY').replace('_', ' ')}</span>
+                              {l.start_time && l.end_time && (
+                                <span className="badge badge-primary">{String(l.start_time).slice(0, 5)} - {String(l.end_time).slice(0, 5)}</span>
+                              )}
+                              {l.duration_minutes > 0 && (
+                                <span className="badge badge-warning">{formatMins(l.duration_minutes)}</span>
+                              )}
+                              {l.is_company_work ? (
+                                <span className="badge badge-success">Company Work</span>
+                              ) : null}
+                            </div>
                           </td>
                           <td>
                             <div style={{ maxWidth: 350, whiteSpace: 'normal', fontSize: 14, color: 'var(--text-muted)', lineHeight: 1.5 }}>{l.reason || 'No reason provided'}</div>
@@ -1413,7 +1446,11 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
 
                           <div className="employee-card-profile">
                             <div className="employee-avatar" style={{ background: isActive ? 'linear-gradient(135deg, var(--primary), #a855f7)' : 'linear-gradient(135deg, var(--primary), #475569)' }}>
-                              {e.name.charAt(0).toUpperCase()}
+                              {e.profile_photo ? (
+                                <img src={fileUrl(e.profile_photo)} alt={e.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
+                              ) : (
+                                e.name.charAt(0).toUpperCase()
+                              )}
                             </div>
                             <h3 className="employee-name">{e.name}</h3>
                             <p className="employee-role">{e.designation || 'Employee'}</p>
@@ -1823,7 +1860,11 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                 <div style={{ width: 64, height: 64, borderRadius: 4, background: selectedEmpInfo.status === 'ACTIVE' ? 'linear-gradient(135deg, var(--primary), #a855f7)' : 'linear-gradient(135deg, var(--primary), #333)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 900, color: '#fff' }}>
-                  {selectedEmpInfo.name.charAt(0).toUpperCase()}
+                  {selectedEmpInfo.profile_photo ? (
+                    <img src={fileUrl(selectedEmpInfo.profile_photo)} alt={selectedEmpInfo.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 4 }} />
+                  ) : (
+                    selectedEmpInfo.name.charAt(0).toUpperCase()
+                  )}
                 </div>
                 <div>
                   <h2 style={{ fontSize: 24, fontWeight: 800, margin: 0 }}>{selectedEmpInfo.name}</h2>
