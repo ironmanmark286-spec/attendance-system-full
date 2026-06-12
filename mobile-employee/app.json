@@ -19,7 +19,14 @@
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#09090b"
       },
-      "package": "com.yourcompany.pulsehr"
+      "package": "com.yourcompany.pulsehr",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
+      ]
     },
     "extra": {
       "eas": {
@@ -28,6 +35,15 @@
     },
     "plugins": [
       "expo-font",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow PulseHR to verify office location for attendance.",
+          "locationAlwaysAndWhenInUsePermission": "Allow PulseHR to auto check-out when you leave the office geofence during an active shift.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
       [
         "expo-image-picker",
         {

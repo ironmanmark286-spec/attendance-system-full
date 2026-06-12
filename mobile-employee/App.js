@@ -6,6 +6,7 @@ import axios from "axios";
 import * as Location from "expo-location";
 import * as LocalAuthentication from "expo-local-authentication";
 import * as ImagePicker from "expo-image-picker";
+import * as TaskManager from "expo-task-manager";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, FontAwesome5, Feather } from "@expo/vector-icons";
 
@@ -28,6 +29,8 @@ const api = axios.create({
   baseURL: API_URL,
   timeout: 10000
 });
+
+const BACKGROUND_GEOFENCE_TASK = "pulsehr-background-geofence";
 
 api.interceptors.response.use(
   (response) => response,
@@ -93,6 +96,84 @@ const getDistanceFromLatLonInMeters = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
+const getProfileGeofence = (employeeProfile = {}) => {
+  const officeLat = Number(employeeProfile.office_lat);
+  const officeLng = Number(employeeProfile.office_lng);
+  const radius = Number(employeeProfile.geofence_radius);
+  if (!Number.isFinite(officeLat) || !Number.isFinite(officeLng) || !Number.isFinite(radius) || radius <= 0) {
+    return null;
+  }
+  return { officeLat, officeLng, radius };
+};
+
+const makeLocationPayload = (loc, location) => ({
+  location,
+  latitude: loc?.coords?.latitude,
+  longitude: loc?.coords?.longitude,
+  accuracy: loc?.coords?.accuracy
+});
+
+const getStoredProfile = async () => {
+  try {
+    const raw = await AsyncStorage.getItem("profile");
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+};
+
+TaskManager.defineTask(BACKGROUND_GEOFENCE_TASK, async ({ data, error }) => {
+  if (error) {
+    console.log("Background geofence error:", error);
+    return;
+  }
+
+  const loc = data?.locations?.[0];
+  if (!loc?.coords) return;
+
+  try {
+    const [currentToken, bgPunchedIn, storedProfile] = await Promise.all([
+      AsyncStorage.getItem("token"),
+      AsyncStorage.getItem("bgPunchedIn"),
+      getStoredProfile()
+    ]);
+
+    if (!currentToken || bgPunchedIn !== "true") return;
+
+    const geofence = getProfileGeofence(storedProfile);
+    if (!geofence) return;
+
+    const distance = getDistanceFromLatLonInMeters(
+      loc.coords.latitude,
+      loc.coords.longitude,
+      geofence.officeLat,
+      geofence.officeLng
+    );
+    const accuracy = Number(loc.coords.accuracy) || 0;
+    const effectiveDistance = Math.max(0, distance - accuracy);
+
+    if (effectiveDistance <= geofence.radius) {
+      await AsyncStorage.setItem("outsideGeofenceCount", "0");
+      return;
+    }
+
+    const currentCount = Number(await AsyncStorage.getItem("outsideGeofenceCount")) || 0;
+    const nextCount = currentCount + 1;
+    await AsyncStorage.setItem("outsideGeofenceCount", String(nextCount));
+    if (nextCount < 2) return;
+
+    await api.post(
+      "/attendance/check-out",
+      makeLocationPayload(loc, `Background auto checkout - left geofence (${Math.round(distance)}m, accuracy ${Math.round(accuracy)}m)`),
+      { headers: { Authorization: `Bearer ${currentToken}` } }
+    );
+    await AsyncStorage.setItem("bgPunchedIn", "false");
+    await AsyncStorage.setItem("outsideGeofenceCount", "0");
+  } catch (e) {
+    console.log("Background auto checkout failed:", e?.response?.data || e.message);
+  }
+});
+
 const LiveClock = React.memo(({ palette }) => {
   const [time, setTime] = useState(new Date());
   useEffect(() => {
@@ -150,6 +231,9 @@ function AppContent() {
   const [isSubmittingTicket, setIsSubmittingTicket] = useState(false);
 
   const [otSettings, setOtSettings] = useState({    standard_hours: 9.0,
+    shift_start_time: "09:00:00",
+    shift_end_time: "18:00:00",
+    late_grace_minutes: 0,
     ot_rate_multiplier: 1.5,
     ot_applicable_from_minutes: 540,
     max_daily_ot_minutes: 180,
@@ -195,6 +279,8 @@ function AppContent() {
 
   const handleLogout = useCallback(async () => {
     await AsyncStorage.removeItem("token");
+    await AsyncStorage.removeItem("profile");
+    await AsyncStorage.setItem("bgPunchedIn", "false");
     setToken("");
     setProfile({ name: "", emp_code: "", department: "", designation: "", profile_photo: "" });
   }, []);
@@ -215,6 +301,7 @@ function AppContent() {
       ]);
 
       setProfile(profRes.data || {});
+      await AsyncStorage.setItem("profile", JSON.stringify(profRes.data || {}));
       await AsyncStorage.setItem("empName", profRes.data?.name || "");
       if (Array.isArray(histRes.data)) {
         setHistory(histRes.data);
@@ -231,17 +318,20 @@ function AppContent() {
             setCheckInTime(format12Hour(checkInDate));
             setCheckOutTime(latest.check_out ? format12Hour(new Date(latest.check_out)) : "--:--");
             setIsPunchedIn(latest.is_punched_in === true);
+            await AsyncStorage.setItem("bgPunchedIn", latest.is_punched_in === true ? "true" : "false");
             setTodayTotalMinutes(latest.total_minutes || 0);
             setTodayOT(latest.overtime_minutes || 0);
           } else {
             setCheckInTime("--:--"); setCheckOutTime("--:--");
             setIsPunchedIn(false);
+            await AsyncStorage.setItem("bgPunchedIn", "false");
             setTodayTotalMinutes(0);
             setTodayOT(0);
           }
         } else {
             setCheckInTime("--:--"); setCheckOutTime("--:--");
             setIsPunchedIn(false);
+            await AsyncStorage.setItem("bgPunchedIn", "false");
             setTodayTotalMinutes(0);
             setTodayOT(0);
         }
@@ -253,7 +343,13 @@ function AppContent() {
       setMyTickets(Array.isArray(ticketRes.data) ? ticketRes.data : []);
       setMyExpenses(Array.isArray(expRes.data) ? expRes.data : []);
       if (otRes.data && Object.keys(otRes.data).length > 0) {
-        setOtSettings(otRes.data);
+        setOtSettings({
+          ...otRes.data,
+          shift_start_time: profRes.data?.shift_start_time || otRes.data.shift_start_time,
+          shift_end_time: profRes.data?.shift_end_time || otRes.data.shift_end_time,
+          standard_hours: profRes.data?.standard_hours || otRes.data.standard_hours,
+          weekly_off_days: profRes.data?.weekly_off_days || otRes.data.weekly_off_days
+        });
       }
     } catch (e) { 
       console.log("Error loading data:", e); 
@@ -344,7 +440,7 @@ function AppContent() {
     return `${loc.coords.latitude.toFixed(4)}, ${loc.coords.longitude.toFixed(4)}`;
   };
 
-  const getFastLocation = async () => {
+  const getFastLocation = async (requireFresh = false) => {
     let { status } = await Location.getForegroundPermissionsAsync();
     if (status !== 'granted') {
       const req = await Location.requestForegroundPermissionsAsync();
@@ -352,33 +448,82 @@ function AppContent() {
     }
     if (status !== 'granted') return null;
 
-    let loc = await Location.getLastKnownPositionAsync({ maxAge: 30000, requiredAccuracy: 100 });
+    let loc = requireFresh ? null : await Location.getLastKnownPositionAsync({ maxAge: 30000, requiredAccuracy: 100 });
     if (!loc) {
       loc = await Promise.race([
-        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-        new Promise(resolve => setTimeout(() => resolve(null), 3000))
+        Location.getCurrentPositionAsync({ accuracy: requireFresh ? Location.Accuracy.High : Location.Accuracy.Balanced }),
+        new Promise(resolve => setTimeout(() => resolve(null), requireFresh ? 8000 : 3000))
       ]);
     }
     return loc;
   };
 
-  const autoCheckoutIfOutsideGeofence = useCallback(async () => {
-    if (!token || !isPunchedIn || autoCheckoutInFlight.current) return;
-    if (!profile.office_lat || !profile.office_lng || !profile.geofence_radius) return;
+  const getConfiguredGeofence = () => {
+    return getProfileGeofence(profile);
+  };
+
+  const startBackgroundGeofence = useCallback(async () => {
+    if (!token || !isPunchedIn || !getConfiguredGeofence()) return;
 
     try {
-      const loc = await getFastLocation();
+      const fg = await Location.getForegroundPermissionsAsync();
+      if (fg.status !== "granted") return;
+
+      const bg = await Location.requestBackgroundPermissionsAsync();
+      if (bg.status !== "granted") {
+        console.log("Background location permission not granted.");
+        return;
+      }
+
+      const alreadyStarted = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_GEOFENCE_TASK);
+      if (alreadyStarted) return;
+
+      await Location.startLocationUpdatesAsync(BACKGROUND_GEOFENCE_TASK, {
+        accuracy: Location.Accuracy.Balanced,
+        timeInterval: 60000,
+        distanceInterval: 50,
+        pausesUpdatesAutomatically: false,
+        foregroundService: {
+          notificationTitle: "PulseHR attendance active",
+          notificationBody: "Office geofence is being monitored for auto checkout."
+        }
+      });
+    } catch (e) {
+      console.log("Start background geofence failed:", e.message);
+    }
+  }, [token, isPunchedIn, profile.office_lat, profile.office_lng, profile.geofence_radius]);
+
+  const stopBackgroundGeofence = useCallback(async () => {
+    try {
+      const started = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_GEOFENCE_TASK);
+      if (started) {
+        await Location.stopLocationUpdatesAsync(BACKGROUND_GEOFENCE_TASK);
+      }
+    } catch (e) {
+      console.log("Stop background geofence failed:", e.message);
+    }
+  }, []);
+
+  const autoCheckoutIfOutsideGeofence = useCallback(async () => {
+    if (!token || !isPunchedIn || autoCheckoutInFlight.current) return;
+    const geofence = getConfiguredGeofence();
+    if (!geofence) return;
+
+    try {
+      const loc = await getFastLocation(true);
       if (!loc) return;
 
       const distance = getDistanceFromLatLonInMeters(
         loc.coords.latitude,
         loc.coords.longitude,
-        Number(profile.office_lat),
-        Number(profile.office_lng)
+        geofence.officeLat,
+        geofence.officeLng
       );
-      const radius = Number(profile.geofence_radius);
 
-      if (distance <= radius) {
+      const accuracy = Number(loc.coords.accuracy) || 0;
+      const effectiveDistance = Math.max(0, distance - accuracy);
+
+      if (effectiveDistance <= geofence.radius) {
         outsideGeofenceCount.current = 0;
         return;
       }
@@ -390,11 +535,12 @@ function AppContent() {
       const address = await resolveAddress(loc);
       const { data } = await api.post(
         "/attendance/check-out",
-        { location: `Auto checkout - left geofence (${Math.round(distance)}m): ${address}` },
+        makeLocationPayload(loc, `Auto checkout - left geofence (${Math.round(distance)}m, accuracy ${Math.round(accuracy)}m): ${address}`),
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setCheckOutTime(format12Hour(new Date()));
       setIsPunchedIn(false);
+      await AsyncStorage.setItem("bgPunchedIn", "false");
       outsideGeofenceCount.current = 0;
       await loadData(token);
       Alert.alert("Auto Check-out", `Aap office radius se bahar chale gaye the, isliye checkout ho gaya. Total: ${formatMins(data.totalMinutes || 0)}`);
@@ -415,6 +561,15 @@ function AppContent() {
     autoCheckoutIfOutsideGeofence();
     return () => clearInterval(interval);
   }, [token, isPunchedIn, autoCheckoutIfOutsideGeofence]);
+
+  useEffect(() => {
+    AsyncStorage.setItem("bgPunchedIn", isPunchedIn ? "true" : "false");
+    if (token && isPunchedIn && getConfiguredGeofence()) {
+      startBackgroundGeofence();
+    } else {
+      stopBackgroundGeofence();
+    }
+  }, [token, isPunchedIn, profile.office_lat, profile.office_lng, profile.geofence_radius, startBackgroundGeofence, stopBackgroundGeofence]);
 
   const handleLocationAction = async (type) => {
     setIsLocating(true);
@@ -438,75 +593,69 @@ function AppContent() {
     }
 
     let addressStr = "Unknown Location";
+    let locationPayload = { location: addressStr };
     try {
-      // Check current permissions first to avoid re-requesting/blocking
-      let { status } = await Location.getForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        const req = await Location.requestForegroundPermissionsAsync();
-        status = req.status;
-      }
-      
-      if (status === 'granted') {
-        // EXTREME Fast Location Fetch
-        let loc = await Location.getLastKnownPositionAsync();
-        if (!loc) {
-          loc = await Promise.race([
-            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Lowest }), // Lowest accuracy is fastest
-            new Promise(resolve => setTimeout(() => resolve(null), 1000)) // Force strict 1 sec timeout for instant feel
-          ]);
-        }
-        if (loc) {
-          // --- NEW: STRICT GEOFENCING (Phase 1b) ---
-          if (profile.office_lat && profile.office_lng && profile.geofence_radius) {
-            const distance = getDistanceFromLatLonInMeters(
-              loc.coords.latitude, loc.coords.longitude,
-              profile.office_lat, profile.office_lng
-            );
-            if (distance > profile.geofence_radius) {
-              setIsLocating(false);
-              return Alert.alert(
-                "Location Out of Bounds 🚫", 
-                `You are ${Math.round(distance)} meters away from the office.\n\nYou must be within ${profile.geofence_radius} meters to Punch ${type}.`
-              );
-            }
-          }
+      const geofence = getConfiguredGeofence();
+      const loc = await getFastLocation(Boolean(geofence));
 
-          try {
-            // Reverse Geocode with strict 1s timeout to prevent hanging
-            const [geocode] = await Promise.race([
-               Location.reverseGeocodeAsync({ latitude: loc.coords.latitude, longitude: loc.coords.longitude }),
-               new Promise(resolve => setTimeout(() => resolve(null), 1000))
-            ]);
-            if (geocode) {
-              addressStr = `${geocode.name || geocode.street || ''}, ${geocode.city || geocode.region || ''}`.replace(/^, /, '').trim();
-            } else {
-              addressStr = `${loc.coords.latitude.toFixed(4)}, ${loc.coords.longitude.toFixed(4)}`;
-            }
-          } catch (e) {
-            addressStr = `${loc.coords.latitude.toFixed(4)}, ${loc.coords.longitude.toFixed(4)}`;
-          }
+      if (!loc && geofence) {
+        setIsLocating(false);
+        return Alert.alert(
+          "GPS Required",
+          "Office geofence enabled hai. Punch mark karne ke liye location permission aur GPS signal required hai."
+        );
+      }
+
+      if (loc) {
+        const distance = geofence ? getDistanceFromLatLonInMeters(
+          loc.coords.latitude,
+          loc.coords.longitude,
+          geofence.officeLat,
+          geofence.officeLng
+        ) : 0;
+        const accuracy = Number(loc.coords.accuracy) || 0;
+        const effectiveDistance = Math.max(0, distance - accuracy);
+
+        if (geofence && type === 'In' && effectiveDistance > geofence.radius) {
+          setIsLocating(false);
+          return Alert.alert(
+            "Location Out of Bounds 🚫",
+            `GPS says you are ${Math.round(distance)}m away (accuracy ${Math.round(accuracy)}m).\n\nYou must be within ${geofence.radius}m to Punch In. Please move near open sky / turn on High Accuracy GPS and retry.`
+          );
         }
+
+        addressStr = await resolveAddress(loc);
+        if (geofence && type === 'Out' && effectiveDistance > geofence.radius) {
+          addressStr = `Outside geofence (${Math.round(distance)}m, accuracy ${Math.round(accuracy)}m): ${addressStr}`;
+        }
+        locationPayload = makeLocationPayload(loc, addressStr);
       }
     } catch (e) {
       console.log("GPS fetch skipped/failed:", e);
+      if (getConfiguredGeofence()) {
+        setIsLocating(false);
+        return Alert.alert("GPS Error", "Location verify nahi ho payi. Please GPS/location permission check karke retry karein.");
+      }
     }
     
     // Immediately proceed to check-in/out
-    await confirmAttendance(type, addressStr);
+    await confirmAttendance(type, locationPayload);
   };
 
-  const confirmAttendance = async (type, address) => {
+  const confirmAttendance = async (type, locationPayload) => {
     const endpoint = type === 'In' ? "/attendance/check-in" : "/attendance/check-out";
     
     try {
-      const { data } = await api.post(endpoint, { location: address }, { headers: { Authorization: `Bearer ${token}` } });
+      const { data } = await api.post(endpoint, locationPayload, { headers: { Authorization: `Bearer ${token}` } });
       const nowStr = format12Hour(new Date());
       if (type === 'In') {
         setCheckInTime(nowStr);
         setIsPunchedIn(true);
+        await AsyncStorage.setItem("bgPunchedIn", "true");
       } else {
         setCheckOutTime(nowStr);
         setIsPunchedIn(false);
+        await AsyncStorage.setItem("bgPunchedIn", "false");
       }
       await loadData(token); // Ensure full reload state updates button instantly
       Alert.alert("Success", type === 'In' ? `Checked in instantly at ${data.companyName || 'Workspace'}.` : `Checked out successfully. Total: ${data.totalMinutes || 0} mins`);
@@ -1055,6 +1204,22 @@ function AppContent() {
                 <View style={{ backgroundColor: palette.bgInput, padding: 12, borderRadius: 12, borderLeftWidth: 3, borderLeftColor: palette.primary }}>
                   <Text style={{ color: palette.textPrimary, fontSize: 24, fontWeight: '900' }}>{otSettings.standard_hours}</Text>
                   <Text style={{ color: palette.textSecondary, fontSize: 12, marginTop: 4 }}>hours per day</Text>
+                </View>
+              </View>
+
+              <View style={[styles.leaveCard, { backgroundColor: palette.bgCard, borderColor: palette.border, shadowColor: palette.shadow, marginBottom: 16 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                  <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(59, 130, 246, 0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                    <Ionicons name="calendar-outline" size={22} color={palette.primary} />
+                  </View>
+                  <View>
+                    <Text style={{ color: palette.textPrimary, fontSize: 16, fontWeight: '800' }}>Shift Timing</Text>
+                    <Text style={{ color: palette.textSecondary, fontSize: 12, marginTop: 2 }}>Company configured daily shift</Text>
+                  </View>
+                </View>
+                <View style={{ backgroundColor: palette.bgInput, padding: 12, borderRadius: 12, borderLeftWidth: 3, borderLeftColor: palette.primary }}>
+                  <Text style={{ color: palette.textPrimary, fontSize: 20, fontWeight: '900' }}>{String(otSettings.shift_start_time || '09:00').slice(0, 5)} - {String(otSettings.shift_end_time || '18:00').slice(0, 5)}</Text>
+                  <Text style={{ color: palette.textSecondary, fontSize: 12, marginTop: 4 }}>Late grace: {otSettings.late_grace_minutes || 0} minutes</Text>
                 </View>
               </View>
 

@@ -6,21 +6,170 @@ const roleGuard = require("../middleware/roles");
 
 const router = express.Router();
 
+const IST_OFFSET_MINUTES = 330;
+
+const getBusinessDate = (date = new Date()) => {
+  const istDate = new Date(date.getTime() + IST_OFFSET_MINUTES * 60000);
+  return istDate.toISOString().slice(0, 10);
+};
+
+const getBusinessHour = (date = new Date()) => {
+  const istDate = new Date(date.getTime() + IST_OFFSET_MINUTES * 60000);
+  return { hour: istDate.getUTCHours(), minute: istDate.getUTCMinutes() };
+};
+
+const timeToMinutes = (timeValue, fallback = "09:00:00") => {
+  const time = String(timeValue || fallback);
+  const [hours, minutes] = time.split(":").map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return 540;
+  return hours * 60 + minutes;
+};
+
+const calculateTotalMinutes = (logs) => {
+  let totalMinutes = 0;
+  let lastIn = null;
+  for (const log of logs) {
+    if (log.punch_type === 'IN') {
+      lastIn = new Date(log.punch_time);
+    } else if (log.punch_type === 'OUT' && lastIn) {
+      const outTime = new Date(log.punch_time);
+      totalMinutes += Math.max(0, Math.floor((outTime - lastIn) / 60000));
+      lastIn = null;
+    }
+  }
+  return totalMinutes;
+};
+
+const getDistanceFromLatLonInMeters = (lat1, lon1, lat2, lon2) => {
+  const R = 6371e3;
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
+const getCompanyGeofence = async (companyId) => {
+  const [rows] = await pool.query("SELECT settings FROM companies WHERE id = ?", [companyId]);
+  if (!rows.length) return null;
+  let settings = {};
+  try { settings = JSON.parse(rows[0].settings || "{}"); } catch (e) {}
+  const officeLat = Number(settings.office_lat);
+  const officeLng = Number(settings.office_lng);
+  const radius = Number(settings.geofence_radius);
+  if (!Number.isFinite(officeLat) || !Number.isFinite(officeLng) || !Number.isFinite(radius) || radius <= 0) {
+    return null;
+  }
+  return { officeLat, officeLng, radius };
+};
+
+const validateServerGeofence = async ({ companyId, latitude, longitude, accuracy, punchType }) => {
+  const geofence = await getCompanyGeofence(companyId);
+  if (!geofence) return { ok: true, geofence: null };
+
+  const lat = Number(latitude);
+  const lng = Number(longitude);
+  const acc = Math.max(0, Number(accuracy) || 0);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return {
+      ok: punchType === 'OUT',
+      geofence,
+      message: "GPS coordinates are required because office geofence is enabled."
+    };
+  }
+
+  const distance = getDistanceFromLatLonInMeters(lat, lng, geofence.officeLat, geofence.officeLng);
+  const effectiveDistance = Math.max(0, distance - acc);
+  if (punchType === 'IN' && effectiveDistance > geofence.radius) {
+    return {
+      ok: false,
+      geofence,
+      distance,
+      accuracy: acc,
+      message: `You are ${Math.round(distance)}m away from office (GPS accuracy ${Math.round(acc)}m). Allowed radius is ${geofence.radius}m.`
+    };
+  }
+
+  return { ok: true, geofence, distance, accuracy: acc, effectiveDistance };
+};
+
+let attendanceAuditReady = false;
+
+async function ensureAttendanceAuditTable() {
+  if (attendanceAuditReady) return;
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS attendance_corrections (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      attendance_id INT NOT NULL,
+      corrected_by INT NOT NULL,
+      old_check_in DATETIME DEFAULT NULL,
+      old_check_out DATETIME DEFAULT NULL,
+      old_status VARCHAR(30) DEFAULT NULL,
+      old_total_minutes INT DEFAULT 0,
+      new_check_in DATETIME DEFAULT NULL,
+      new_check_out DATETIME DEFAULT NULL,
+      new_status VARCHAR(30) DEFAULT NULL,
+      new_total_minutes INT DEFAULT 0,
+      reason TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (attendance_id) REFERENCES attendance(id) ON DELETE CASCADE,
+      FOREIGN KEY (corrected_by) REFERENCES users(id)
+    )
+  `);
+  attendanceAuditReady = true;
+}
+
+async function findActiveAttendance(employeeId, preferredDate) {
+  const [rows] = await pool.query(
+    `SELECT a.*,
+      (SELECT punch_type FROM punch_logs WHERE attendance_id = a.id ORDER BY punch_time DESC LIMIT 1) AS last_punch
+     FROM attendance a
+     WHERE a.employee_id = ?
+       AND (a.att_date = ? OR a.check_out IS NULL OR a.check_in >= DATE_SUB(NOW(), INTERVAL 36 HOUR))
+     ORDER BY a.check_in DESC
+     LIMIT 5`,
+    [employeeId, preferredDate]
+  );
+
+  return rows.find((row) => row.last_punch === 'IN') || null;
+}
+
 router.post("/check-in", auth, roleGuard("EMPLOYEE"), async (req, res) => {
   try {
-    const { location } = req.body;
+    const { location, latitude, longitude, accuracy } = req.body;
     const employeeId = req.user.employee_id;
     const now = new Date();
-    
-    // Using local date string to avoid timezone bugs
-    const dateStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
-
-    const isLate = now.getHours() > 9 || (now.getHours() === 9 && now.getMinutes() > 0);
-    const status = isLate ? 'LATE' : 'PRESENT';
+    const dateStr = getBusinessDate(now);
 
     const companyId = req.user.company_id;
     const [compRows] = await pool.query("SELECT name FROM companies WHERE id = ?", [companyId]);
     const companyName = compRows.length ? compRows[0].name : "Workspace";
+
+    const geofenceCheck = await validateServerGeofence({ companyId, latitude, longitude, accuracy, punchType: 'IN' });
+    if (!geofenceCheck.ok) {
+      return res.status(400).json({ message: geofenceCheck.message, distance: geofenceCheck.distance, accuracy: geofenceCheck.accuracy });
+    }
+
+    const { hour, minute } = getBusinessHour(now);
+    let shiftStartMinutes = 540;
+    let lateGraceMinutes = 0;
+    try {
+      const [shiftRows] = await pool.query(
+        "SELECT shift_start_time, late_grace_minutes FROM ot_settings WHERE company_id = ?",
+        [companyId]
+      );
+      if (shiftRows.length) {
+        shiftStartMinutes = timeToMinutes(shiftRows[0].shift_start_time, "09:00:00");
+        lateGraceMinutes = Number(shiftRows[0].late_grace_minutes) || 0;
+      }
+    } catch (e) {
+      console.warn("Shift settings unavailable, using defaults:", e.message);
+    }
+
+    const isLate = (hour * 60 + minute) > (shiftStartMinutes + lateGraceMinutes);
+    const status = isLate ? 'LATE' : 'PRESENT';
 
     const [rows] = await pool.query(
       "SELECT * FROM attendance WHERE employee_id = ? AND att_date = ?",
@@ -59,32 +208,21 @@ router.post("/check-in", auth, roleGuard("EMPLOYEE"), async (req, res) => {
 
 router.post("/check-out", auth, roleGuard("EMPLOYEE"), async (req, res) => {
   try {
-    const { location } = req.body;
+    const { location, latitude, longitude, accuracy } = req.body;
     const employeeId = req.user.employee_id;
     const now = new Date();
-    const dateStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+    const dateStr = getBusinessDate(now);
 
     const companyId = req.user.company_id;
     const [compRows] = await pool.query("SELECT name FROM companies WHERE id = ?", [companyId]);
     const companyName = compRows.length ? compRows[0].name : "Workspace";
+    await validateServerGeofence({ companyId, latitude, longitude, accuracy, punchType: 'OUT' });
 
-    const [rows] = await pool.query(
-      "SELECT * FROM attendance WHERE employee_id = ? AND att_date = ?",
-      [employeeId, dateStr]
-    );
-
-    if (!rows.length) {
+    const activeAttendance = await findActiveAttendance(employeeId, dateStr);
+    if (!activeAttendance) {
       return res.status(400).json({ message: "Check-in not found" });
     }
-    const attId = rows[0].id;
-
-    const [lastLogs] = await pool.query(
-      "SELECT punch_type FROM punch_logs WHERE attendance_id = ? ORDER BY punch_time DESC LIMIT 1",
-      [attId]
-    );
-    if (!lastLogs.length || lastLogs[0].punch_type === 'OUT') {
-      return res.status(400).json({ message: "Already checked out or no active check-in found." });
-    }
+    const attId = activeAttendance.id;
 
     await pool.query(
       "INSERT INTO punch_logs (employee_id, attendance_id, punch_time, punch_type, location) VALUES (?, ?, ?, 'OUT', ?)",
@@ -96,17 +234,7 @@ router.post("/check-out", auth, roleGuard("EMPLOYEE"), async (req, res) => {
       [attId]
     );
 
-    let totalMinutes = 0;
-    let lastIn = null;
-    for (let log of logs) {
-      if (log.punch_type === 'IN') {
-        lastIn = new Date(log.punch_time);
-      } else if (log.punch_type === 'OUT' && lastIn) {
-        const outTime = new Date(log.punch_time);
-        totalMinutes += Math.floor((outTime - lastIn) / 60000);
-        lastIn = null;
-      }
-    }
+    const totalMinutes = calculateTotalMinutes(logs);
 
     let standardWorkHours = 9;
     let otApplicableFrom = 540;
@@ -172,7 +300,7 @@ router.get("/history", auth, roleGuard("EMPLOYEE"), async (req, res) => {
 // NEW: Get analytics for the admin dashboard
 router.get("/stats/today", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), async (req, res) => {
   try {
-    const dateStr = new Date().toISOString().slice(0, 10);
+    const dateStr = getBusinessDate();
     const companyId = req.user.company_id;
 
     const [[{ total }]] = await pool.query("SELECT COUNT(*) as total FROM employees WHERE company_id = ? AND status = 'ACTIVE'", [companyId]);
@@ -219,7 +347,7 @@ router.get("/stats/today", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), async (
 
 router.get("/today", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), async (req, res) => {
   try {
-    const dateStr = new Date().toISOString().slice(0, 10);
+    const dateStr = getBusinessDate();
     const [rows] = await pool.query(
       `SELECT a.*, e.emp_code, e.name
        FROM attendance a
@@ -232,12 +360,105 @@ router.get("/today", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), async (req, r
     for (let r of rows) {
       const [logs] = await pool.query("SELECT punch_time, punch_type FROM punch_logs WHERE attendance_id = ? ORDER BY punch_time ASC", [r.id]);
       r.punches = logs;
+      const lastPunch = logs.length ? logs[logs.length - 1].punch_type : null;
+      const awayMinutes = (() => {
+        let away = 0;
+        for (let i = 0; i < logs.length - 1; i += 1) {
+          if (logs[i].punch_type === 'OUT' && logs[i + 1].punch_type === 'IN') {
+            away += Math.max(0, Math.floor((new Date(logs[i + 1].punch_time) - new Date(logs[i].punch_time)) / 60000));
+          }
+        }
+        return away;
+      })();
+      r.live_status = lastPunch === 'IN' ? 'INSIDE' : (lastPunch === 'OUT' ? 'OUTSIDE' : 'UNKNOWN');
+      r.away_minutes = awayMinutes;
     }
 
     return res.json(rows);
   } catch (err) {
     console.error("Today attendance error:", err);
     return res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.put("/:id/correct", auth, roleGuard("ADMIN", "HR"), async (req, res) => {
+  try {
+    await ensureAttendanceAuditTable();
+    const { check_in, check_out, status, reason } = req.body;
+    if (!reason || String(reason).trim().length < 3) {
+      return res.status(400).json({ message: "Correction reason is required" });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT a.id, a.employee_id, a.check_in, a.check_out, a.status, a.total_minutes
+       FROM attendance a
+       JOIN employees e ON e.id = a.employee_id
+       WHERE a.id = ? AND e.company_id = ?`,
+      [req.params.id, req.user.company_id]
+    );
+    if (!rows.length) {
+      return res.status(404).json({ message: "Attendance record not found" });
+    }
+
+    const oldRecord = rows[0];
+    const updates = [];
+    const values = [];
+    if (check_in) {
+      updates.push("check_in = ?");
+      values.push(new Date(check_in));
+    }
+    if (check_out) {
+      updates.push("check_out = ?");
+      values.push(new Date(check_out));
+    }
+    if (['PRESENT', 'ABSENT', 'LATE', 'HALF_DAY'].includes(status)) {
+      updates.push("status = ?");
+      values.push(status);
+    }
+
+    let totalMinutes = null;
+    if (check_in && check_out) {
+      totalMinutes = Math.max(0, Math.floor((new Date(check_out) - new Date(check_in)) / 60000));
+      updates.push("total_minutes = ?");
+      values.push(totalMinutes);
+    }
+
+    if (!updates.length) {
+      return res.status(400).json({ message: "No correction fields provided" });
+    }
+
+    values.push(req.params.id);
+    await pool.query(`UPDATE attendance SET ${updates.join(", ")} WHERE id = ?`, values);
+
+    const [newRows] = await pool.query(
+      "SELECT check_in, check_out, status, total_minutes FROM attendance WHERE id = ?",
+      [req.params.id]
+    );
+    const newRecord = newRows[0];
+    await pool.query(
+      `INSERT INTO attendance_corrections
+       (attendance_id, corrected_by, old_check_in, old_check_out, old_status, old_total_minutes,
+        new_check_in, new_check_out, new_status, new_total_minutes, reason)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        req.params.id,
+        req.user.id,
+        oldRecord.check_in,
+        oldRecord.check_out,
+        oldRecord.status,
+        oldRecord.total_minutes || 0,
+        newRecord.check_in,
+        newRecord.check_out,
+        newRecord.status,
+        newRecord.total_minutes || 0,
+        reason
+      ]
+    );
+
+    res.json({ message: "Attendance corrected", totalMinutes });
+  } catch (err) {
+    console.error("Attendance correction error:", err);
+    res.status(500).json({ message: "Failed to correct attendance" });
   }
 });
 
@@ -310,7 +531,7 @@ router.get("/summary/monthly", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), asy
 // NEW: Get online team members for mobile app
 router.get("/online-team", auth, roleGuard("EMPLOYEE"), async (req, res) => {
   try {
-    const dateStr = new Date().toISOString().slice(0, 10);
+    const dateStr = getBusinessDate();
     const [rows] = await pool.query(
       `SELECT e.id, e.name, e.designation as role 
        FROM attendance a

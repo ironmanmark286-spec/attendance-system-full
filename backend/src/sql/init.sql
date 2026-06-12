@@ -39,6 +39,10 @@ CREATE TABLE IF NOT EXISTS employees (
   name VARCHAR(100) NOT NULL,
   designation VARCHAR(100) DEFAULT 'Employee',
   profile_photo VARCHAR(255) DEFAULT NULL,
+  shift_start_time TIME DEFAULT NULL,
+  shift_end_time TIME DEFAULT NULL,
+  standard_hours DECIMAL(5,2) DEFAULT NULL,
+  weekly_off_days VARCHAR(50) DEFAULT NULL,
   password_hash VARCHAR(255) NOT NULL,
   plain_password VARCHAR(255) DEFAULT NULL,
   status ENUM('ACTIVE', 'INACTIVE') DEFAULT 'ACTIVE',
@@ -75,6 +79,24 @@ CREATE TABLE IF NOT EXISTS punch_logs (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (employee_id) REFERENCES employees(id),
   FOREIGN KEY (attendance_id) REFERENCES attendance(id)
+);
+
+CREATE TABLE IF NOT EXISTS attendance_corrections (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  attendance_id INT NOT NULL,
+  corrected_by INT NOT NULL,
+  old_check_in DATETIME DEFAULT NULL,
+  old_check_out DATETIME DEFAULT NULL,
+  old_status VARCHAR(30) DEFAULT NULL,
+  old_total_minutes INT DEFAULT 0,
+  new_check_in DATETIME DEFAULT NULL,
+  new_check_out DATETIME DEFAULT NULL,
+  new_status VARCHAR(30) DEFAULT NULL,
+  new_total_minutes INT DEFAULT 0,
+  reason TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (attendance_id) REFERENCES attendance(id) ON DELETE CASCADE,
+  FOREIGN KEY (corrected_by) REFERENCES users(id)
 );
 
 -- 7. Notices Table (Notice Board for App & Web)
@@ -148,6 +170,9 @@ CREATE TABLE IF NOT EXISTS ot_settings (
   id INT AUTO_INCREMENT PRIMARY KEY,
   company_id INT NOT NULL,
   standard_hours DECIMAL(5,2) DEFAULT 9.0,
+  shift_start_time TIME DEFAULT '09:00:00',
+  shift_end_time TIME DEFAULT '18:00:00',
+  late_grace_minutes INT DEFAULT 0,
   ot_rate_multiplier DECIMAL(3,2) DEFAULT 1.5,
   ot_applicable_from_minutes INT DEFAULT 540,
   max_daily_ot_minutes INT DEFAULT 180,

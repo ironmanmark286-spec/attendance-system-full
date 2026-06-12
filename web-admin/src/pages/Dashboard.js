@@ -91,10 +91,13 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
   const [searchQuery, setSearchQuery] = useState("");
   const [attendanceView, setAttendanceView] = useState("daily"); // 'daily' or 'monthly'
   const [selectedPunches, setSelectedPunches] = useState(null);
+  const [selectedCorrection, setSelectedCorrection] = useState(null);
+  const [correctionForm, setCorrectionForm] = useState({ check_in: "", check_out: "", status: "PRESENT", reason: "" });
   const [isAddEmpModalOpen, setIsAddEmpModalOpen] = useState(false);
-  const [newEmp, setNewEmp] = useState({ empCode: "", name: "", password: "", designation: "" });
+  const [newEmp, setNewEmp] = useState({ empCode: "", name: "", password: "", designation: "", shift_start_time: "", shift_end_time: "", standard_hours: "", weekly_off_days: "" });
   const [addedEmpDetails, setAddedEmpDetails] = useState(null);
   const [selectedEmpInfo, setSelectedEmpInfo] = useState(null);
+  const [shiftForm, setShiftForm] = useState({ shift_start_time: "", shift_end_time: "", standard_hours: "", weekly_off_days: "" });
   const [isEditCompanyModalOpen, setIsEditCompanyModalOpen] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState("");
   const [showNotifications, setShowNotifications] = useState(false);
@@ -272,7 +275,7 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
         designation: data.designation || newEmp.designation,
         password: data.password || newEmp.password
       });
-      setNewEmp({ empCode: "", name: "", password: "", designation: "" });
+      setNewEmp({ empCode: "", name: "", password: "", designation: "", shift_start_time: "", shift_end_time: "", standard_hours: "", weekly_off_days: "" });
       loadData();
     } catch (err) {
       const msg = err.response?.data?.message || "Failed to add employee";
@@ -283,6 +286,58 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
       } else {
         alert(msg);
       }
+    }
+  };
+
+  const openCorrectionModal = (record) => {
+    const toLocalInput = (value) => {
+      if (!value) return "";
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return "";
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+    setSelectedCorrection(record);
+    setCorrectionForm({
+      check_in: toLocalInput(record.check_in),
+      check_out: toLocalInput(record.check_out),
+      status: record.status || "PRESENT",
+      reason: ""
+    });
+  };
+
+  const handleSaveCorrection = async (e) => {
+    e.preventDefault();
+    if (!selectedCorrection) return;
+    try {
+      await api.put(`/attendance/${selectedCorrection.id}/correct`, correctionForm);
+      setSelectedCorrection(null);
+      setCorrectionForm({ check_in: "", check_out: "", status: "PRESENT", reason: "" });
+      loadData();
+    } catch (err) {
+      alert(err.response?.data?.message || "Failed to correct attendance");
+    }
+  };
+
+  const openEmployeeInfo = (employee) => {
+    setSelectedEmpInfo(employee);
+    setShiftForm({
+      shift_start_time: employee.shift_start_time ? String(employee.shift_start_time).slice(0, 5) : "",
+      shift_end_time: employee.shift_end_time ? String(employee.shift_end_time).slice(0, 5) : "",
+      standard_hours: employee.standard_hours || "",
+      weekly_off_days: employee.weekly_off_days || ""
+    });
+  };
+
+  const handleSaveEmployeeShift = async () => {
+    if (!selectedEmpInfo) return;
+    try {
+      await api.put(`/employees/${selectedEmpInfo.id}/shift`, shiftForm);
+      alert("Employee shift updated");
+      setSelectedEmpInfo(null);
+      loadData();
+    } catch (err) {
+      alert(err.response?.data?.message || "Failed to update shift");
     }
   };
 
@@ -1107,11 +1162,12 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                       <th>Geo-Location</th>
                       <th>Duration Log</th>
                       <th>Status</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredRows.length === 0 ? (
-                      <tr><td colSpan="5" style={{ textAlign: 'center', padding: '60px', color: 'var(--text-muted)' }}>No records found matching your search.</td></tr>
+                      <tr><td colSpan="6" style={{ textAlign: 'center', padding: '60px', color: 'var(--text-muted)' }}>No records found matching your search.</td></tr>
                     ) : (
                       filteredRows.map((r) => (
                         <tr key={r.id}>
@@ -1158,7 +1214,19 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                               </div>
                             )}
                           </td>
-                          <td>{getStatusBadge(r.status)}</td>
+                          <td>
+                            {getStatusBadge(r.status)}
+                            {r.live_status && (
+                              <div style={{ marginTop: 6 }}>
+                                <span className={`badge ${r.live_status === 'INSIDE' ? 'badge-success' : 'badge-danger'}`}>{r.live_status}</span>
+                              </div>
+                            )}
+                          </td>
+                          <td>
+                            <button className="btn btn-secondary" style={{ padding: '8px 12px' }} onClick={() => openCorrectionModal(r)}>
+                              <Edit2 size={15} /> Correct
+                            </button>
+                          </td>
                         </tr>
                       ))
                     )}
@@ -1436,7 +1504,7 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                     const isActive = e.status === 'ACTIVE';
                     const joined = new Date(e.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
                     return (
-                      <div key={e.id} className="employee-card" onClick={() => setSelectedEmpInfo(e)}>
+                      <div key={e.id} className="employee-card" onClick={() => openEmployeeInfo(e)}>
                         <div className="employee-card-accent" style={{ background: isActive ? 'var(--success)' : 'var(--danger)' }} />
                         <div className="employee-card-body">
                           <div className="employee-card-top">
@@ -1782,6 +1850,26 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                   <label className="form-label">Temporary Access Password</label>
                   <input className="form-control" type="password" placeholder="••••••••" value={newEmp.password} onChange={(e) => setNewEmp({...newEmp, password: e.target.value})} required />
                 </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div className="form-group">
+                    <label className="form-label">Shift Start</label>
+                    <input className="form-control" type="time" value={newEmp.shift_start_time} onChange={(e) => setNewEmp({...newEmp, shift_start_time: e.target.value})} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Shift End</label>
+                    <input className="form-control" type="time" value={newEmp.shift_end_time} onChange={(e) => setNewEmp({...newEmp, shift_end_time: e.target.value})} />
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div className="form-group">
+                    <label className="form-label">Standard Hours</label>
+                    <input className="form-control" type="number" step="0.5" placeholder="Default" value={newEmp.standard_hours} onChange={(e) => setNewEmp({...newEmp, standard_hours: e.target.value})} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Weekly Off</label>
+                    <input className="form-control" placeholder="e.g. Sunday" value={newEmp.weekly_off_days} onChange={(e) => setNewEmp({...newEmp, weekly_off_days: e.target.value})} />
+                  </div>
+                </div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 40 }}>
                   <button type="button" className="btn btn-secondary" onClick={() => setIsAddEmpModalOpen(false)}>Cancel</button>
                   <button type="submit" className="btn">Provision Account</button>
@@ -1898,6 +1986,29 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                 <span className="employee-password">{selectedEmpInfo.plain_password || '—'}</span>
               </div>
             </div>
+
+            <div style={{ marginTop: 24, padding: 16, border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg-input)' }}>
+              <h3 style={{ fontSize: 16, fontWeight: 800, marginBottom: 14 }}>Shift Override</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div className="form-group" style={{ marginBottom: 10 }}>
+                  <label className="form-label">Start</label>
+                  <input className="form-control" type="time" value={shiftForm.shift_start_time} onChange={(e) => setShiftForm({...shiftForm, shift_start_time: e.target.value})} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 10 }}>
+                  <label className="form-label">End</label>
+                  <input className="form-control" type="time" value={shiftForm.shift_end_time} onChange={(e) => setShiftForm({...shiftForm, shift_end_time: e.target.value})} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Hours</label>
+                  <input className="form-control" type="number" step="0.5" value={shiftForm.standard_hours} onChange={(e) => setShiftForm({...shiftForm, standard_hours: e.target.value})} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Weekly Off</label>
+                  <input className="form-control" value={shiftForm.weekly_off_days} onChange={(e) => setShiftForm({...shiftForm, weekly_off_days: e.target.value})} />
+                </div>
+              </div>
+              <button className="btn btn-secondary" style={{ width: '100%', marginTop: 14 }} onClick={handleSaveEmployeeShift}>Save Shift</button>
+            </div>
             
             <button className="btn" style={{ width: '100%', marginTop: 32 }} onClick={() => setSelectedEmpInfo(null)}>Close</button>
           </div>
@@ -1966,6 +2077,48 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 40 }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setIsUploadSlipModalOpen(false)}>Cancel</button>
                 <button type="submit" className="btn">Upload Payslip</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Attendance Correction Modal */}
+      {selectedCorrection && (
+        <div className="modal-overlay" onClick={(e) => { if(e.target.className === 'modal-overlay') setSelectedCorrection(null) }}>
+          <div className="modal-content" style={{ maxWidth: 460, padding: 32 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+              <h2 style={{ fontSize: 22, fontWeight: 800 }}>Correct Attendance</h2>
+              <button className="btn btn-secondary" style={{ padding: 8, borderRadius: 4, border: 'none' }} onClick={() => setSelectedCorrection(null)}>
+                <X size={22} />
+              </button>
+            </div>
+            <p style={{ color: 'var(--text-muted)', marginBottom: 20, fontWeight: 600 }}>{selectedCorrection.name} ({selectedCorrection.emp_code})</p>
+            <form onSubmit={handleSaveCorrection}>
+              <div className="form-group">
+                <label className="form-label">Check In</label>
+                <input className="form-control" type="datetime-local" value={correctionForm.check_in} onChange={(e) => setCorrectionForm({...correctionForm, check_in: e.target.value})} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Check Out</label>
+                <input className="form-control" type="datetime-local" value={correctionForm.check_out} onChange={(e) => setCorrectionForm({...correctionForm, check_out: e.target.value})} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Status</label>
+                <select className="form-control" value={correctionForm.status} onChange={(e) => setCorrectionForm({...correctionForm, status: e.target.value})}>
+                  <option value="PRESENT">Present</option>
+                  <option value="LATE">Late</option>
+                  <option value="HALF_DAY">Half Day</option>
+                  <option value="ABSENT">Absent</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Correction Reason</label>
+                <textarea className="form-control" rows="3" required placeholder="Why is HR correcting this record?" value={correctionForm.reason} onChange={(e) => setCorrectionForm({...correctionForm, reason: e.target.value})} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 24 }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setSelectedCorrection(null)}>Cancel</button>
+                <button type="submit" className="btn">Save Correction</button>
               </div>
             </form>
           </div>

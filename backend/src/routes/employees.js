@@ -44,13 +44,23 @@ async function ensureEmployeeColumns() {
     const [dbRows] = await pool.query("SELECT DATABASE() AS db_name");
     dbName = dbRows[0]?.db_name;
   }
+  const required = {
+    profile_photo: "ALTER TABLE employees ADD COLUMN profile_photo VARCHAR(255) DEFAULT NULL",
+    shift_start_time: "ALTER TABLE employees ADD COLUMN shift_start_time TIME DEFAULT NULL",
+    shift_end_time: "ALTER TABLE employees ADD COLUMN shift_end_time TIME DEFAULT NULL",
+    standard_hours: "ALTER TABLE employees ADD COLUMN standard_hours DECIMAL(5,2) DEFAULT NULL",
+    weekly_off_days: "ALTER TABLE employees ADD COLUMN weekly_off_days VARCHAR(50) DEFAULT NULL"
+  };
   const [rows] = await pool.query(
     `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
-     WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'employees' AND COLUMN_NAME = 'profile_photo'`,
+     WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'employees'`,
     [dbName]
   );
-  if (!rows.length) {
-    await pool.query("ALTER TABLE employees ADD COLUMN profile_photo VARCHAR(255) DEFAULT NULL");
+  const existing = new Set(rows.map((row) => row.COLUMN_NAME));
+  for (const [column, sql] of Object.entries(required)) {
+    if (!existing.has(column)) {
+      await pool.query(sql);
+    }
   }
   employeeColumnsReady = true;
 }
@@ -64,7 +74,8 @@ router.get("/me", auth, async (req, res) => {
     }
     const empId = req.user.employee_id || req.user.id;
     const [rows] = await pool.query(
-      `SELECT e.emp_code, e.name, e.designation, e.status, e.created_at, e.profile_photo, c.settings
+      `SELECT e.emp_code, e.name, e.designation, e.status, e.created_at, e.profile_photo,
+        e.shift_start_time, e.shift_end_time, e.standard_hours, e.weekly_off_days, c.settings
        FROM employees e 
        JOIN companies c ON e.company_id = c.id 
        WHERE e.id = ? AND e.company_id = ?`,
@@ -84,6 +95,10 @@ router.get("/me", auth, async (req, res) => {
       status: e.status,
       created_at: e.created_at,
       profile_photo: e.profile_photo,
+      shift_start_time: e.shift_start_time,
+      shift_end_time: e.shift_end_time,
+      standard_hours: e.standard_hours,
+      weekly_off_days: e.weekly_off_days,
       office_lat: settings.office_lat || null,
       office_lng: settings.office_lng || null,
       geofence_radius: settings.geofence_radius || 50 // default 50 meters limit
@@ -134,7 +149,9 @@ router.get("/", auth, roles("ADMIN"), async (req, res) => {
   try {
     await ensureEmployeeColumns();
     const [rows] = await pool.query(
-      "SELECT id, emp_code, name, status, designation, profile_photo, created_at FROM employees WHERE company_id = ? ORDER BY created_at DESC",
+      `SELECT id, emp_code, name, status, designation, profile_photo, shift_start_time, shift_end_time,
+        standard_hours, weekly_off_days, created_at
+       FROM employees WHERE company_id = ? ORDER BY created_at DESC`,
       [req.user.company_id]
     );
     res.json(rows);
@@ -147,7 +164,8 @@ router.get("/", auth, roles("ADMIN"), async (req, res) => {
 // Add a new employee
 router.post("/", auth, roles("ADMIN"), async (req, res) => {
   try {
-    const { empCode, name, password, designation } = req.body;
+    await ensureEmployeeColumns();
+    const { empCode, name, password, designation, shift_start_time, shift_end_time, standard_hours, weekly_off_days } = req.body;
     if (!empCode || !name || !password) {
       return res.status(400).json({ message: "All fields are required" });
     }
@@ -178,14 +196,53 @@ router.post("/", auth, roles("ADMIN"), async (req, res) => {
 
     const hash = await bcrypt.hash(password, 10);
     await pool.query(
-      "INSERT INTO employees (company_id, emp_code, name, designation, password_hash) VALUES (?, ?, ?, ?, ?)",
-      [req.user.company_id, empCode, name, designation || 'Employee', hash]
+      `INSERT INTO employees
+       (company_id, emp_code, name, designation, password_hash, shift_start_time, shift_end_time, standard_hours, weekly_off_days)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        req.user.company_id,
+        empCode,
+        name,
+        designation || 'Employee',
+        hash,
+        shift_start_time || null,
+        shift_end_time || null,
+        standard_hours || null,
+        weekly_off_days || null
+      ]
     );
 
     res.status(201).json({ message: "Employee added successfully", empCode, name, designation: designation || 'Employee' });
   } catch (err) {
     console.error("Error adding employee:", err);
     res.status(500).json({ message: "Failed to add employee" });
+  }
+});
+
+router.put("/:id/shift", auth, roles("ADMIN", "HR"), async (req, res) => {
+  try {
+    await ensureEmployeeColumns();
+    const { shift_start_time, shift_end_time, standard_hours, weekly_off_days } = req.body;
+    const [result] = await pool.query(
+      `UPDATE employees
+       SET shift_start_time = ?, shift_end_time = ?, standard_hours = ?, weekly_off_days = ?
+       WHERE id = ? AND company_id = ?`,
+      [
+        shift_start_time || null,
+        shift_end_time || null,
+        standard_hours || null,
+        weekly_off_days || null,
+        req.params.id,
+        req.user.company_id
+      ]
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "Employee not found" });
+    }
+    res.json({ message: "Employee shift updated" });
+  } catch (err) {
+    console.error("Error updating employee shift:", err);
+    res.status(500).json({ message: "Failed to update employee shift" });
   }
 });
 

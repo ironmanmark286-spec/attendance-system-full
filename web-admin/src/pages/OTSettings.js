@@ -13,6 +13,9 @@ import {
 export default function OTSettings({ theme }) {
   const [otSettings, setOtSettings] = useState({
     standard_hours: 9.0,
+    shift_start_time: "09:00:00",
+    shift_end_time: "18:00:00",
+    late_grace_minutes: 0,
     ot_rate_multiplier: 1.5,
     ot_applicable_from_minutes: 540,
     max_daily_ot_minutes: 180,
@@ -41,7 +44,8 @@ export default function OTSettings({ theme }) {
       let newValue = value;
       if (
         field === "ot_applicable_from_minutes" ||
-        field === "max_daily_ot_minutes"
+        field === "max_daily_ot_minutes" ||
+        field === "late_grace_minutes"
       ) {
         newValue = parseInt(value) || 0;
       } else if (field === "standard_hours" || field === "ot_rate_multiplier") {
@@ -235,6 +239,108 @@ export default function OTSettings({ theme }) {
             />
             <p style={{ color: "var(--text-muted)", fontSize: "12px", margin: "8px 0 0 0" }}>
               Currently set to {otSettings.standard_hours} hours
+            </p>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "20px" }}>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "12px",
+                  fontWeight: "700",
+                  color: "var(--text-muted)",
+                  marginBottom: "8px",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.5px",
+                }}
+              >
+                Shift Start
+              </label>
+              <input
+                type="time"
+                value={String(otSettings.shift_start_time || "09:00").slice(0, 5)}
+                onChange={(e) => handleChange("shift_start_time", e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "12px 14px",
+                  borderRadius: "16px",
+                  border: `2px solid var(--border)`,
+                  backgroundColor: "var(--bg-input)",
+                  color: "var(--text-main)",
+                  fontSize: "14px",
+                  fontWeight: "600",
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "12px",
+                  fontWeight: "700",
+                  color: "var(--text-muted)",
+                  marginBottom: "8px",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.5px",
+                }}
+              >
+                Shift End
+              </label>
+              <input
+                type="time"
+                value={String(otSettings.shift_end_time || "18:00").slice(0, 5)}
+                onChange={(e) => handleChange("shift_end_time", e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "12px 14px",
+                  borderRadius: "16px",
+                  border: `2px solid var(--border)`,
+                  backgroundColor: "var(--bg-input)",
+                  color: "var(--text-main)",
+                  fontSize: "14px",
+                  fontWeight: "600",
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+          </div>
+
+          <div style={{ marginBottom: "20px" }}>
+            <label
+              style={{
+                display: "block",
+                fontSize: "12px",
+                fontWeight: "700",
+                color: "var(--text-muted)",
+                marginBottom: "8px",
+                textTransform: "uppercase",
+                letterSpacing: "0.5px",
+              }}
+            >
+              Late Grace Minutes
+            </label>
+            <input
+              type="number"
+              step="5"
+              min="0"
+              value={otSettings.late_grace_minutes || 0}
+              onChange={(e) => handleChange("late_grace_minutes", e.target.value)}
+              style={{
+                width: "100%",
+                padding: "12px 14px",
+                borderRadius: "16px",
+                border: `2px solid var(--border)`,
+                backgroundColor: "var(--bg-input)",
+                color: "var(--text-main)",
+                fontSize: "14px",
+                fontWeight: "600",
+                boxSizing: 'border-box'
+              }}
+            />
+            <p style={{ color: "var(--text-muted)", fontSize: "12px", margin: "8px 0 0 0" }}>
+              Employee late tab mark hoga jab check-in shift start + grace ke baad hoga.
             </p>
           </div>
 
