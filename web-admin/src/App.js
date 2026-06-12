@@ -232,98 +232,112 @@ const GlobalDesignOverrides = () => (
     @media (max-width: 992px) {
       .app-layout {
         flex-direction: column !important;
-        padding: 8px 8px 100px 8px !important; /* Bottom padding for fixed bottom nav */
+        padding: 0 !important;
         min-height: 100vh;
       }
       
-      /* Fixed Bottom Navigation */
+      /* Drawer Sidebar Navigation */
       .sidebar {
         position: fixed !important;
-        bottom: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        width: 100% !important;
-        height: auto !important;
-        min-height: 72px !important;
-        flex-direction: row !important;
-        padding: 8px 12px !important;
+        top: 0 !important;
+        left: -320px !important;
+        width: 280px !important;
+        height: 100vh !important;
+        flex-direction: column !important;
+        padding: 24px 16px !important;
         margin: 0 !important;
-        border-radius: 24px 24px 0 0 !important;
-        z-index: 9999 !important;
-        overflow-x: auto;
-        overflow-y: hidden !important;
-        -webkit-overflow-scrolling: touch;
-        justify-content: flex-start !important;
-        box-shadow: 0 -10px 40px -10px rgba(0,0,0,0.1) !important;
+        border-radius: 0 !important;
+        z-index: 10000 !important;
+        overflow-y: auto !important;
+        transition: left 0.3s ease !important;
+        box-shadow: 10px 0 40px rgba(0,0,0,0.2) !important;
+        background: var(--bg-card) !important;
       }
       
+      /* Use the existing collapsed state to open the drawer on mobile */
+      .sidebar.collapsed {
+        left: 0 !important;
+        width: 280px !important;
+      }
+      
+      .sidebar.collapsed .brand-text,
+      .sidebar.collapsed .nav-item span {
+        display: block !important;
+        opacity: 1 !important;
+        transform: translateX(0) !important;
+        width: auto !important;
+      }
+      
+      .sidebar.collapsed .nav-item {
+        justify-content: flex-start !important;
+        padding: 12px 16px !important;
+      }
+
       .sidebar .brand {
-        display: none !important; /* Hide logo text on phone */
+        display: flex !important;
+        margin-bottom: 24px;
       }
       
       .sidebar-footer {
         display: flex !important;
-        flex-direction: row !important;
-        gap: 4px !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        width: max-content !important;
-        border-left: 1px solid var(--border);
-        padding-left: 4px !important;
-        margin-left: 4px !important;
+        flex-direction: column !important;
+        gap: 8px !important;
+        margin-top: auto !important;
+        padding: 16px 0 0 0 !important;
+        border-top: 1px solid var(--border);
+        border-left: none !important;
       }
       
       .nav-menu {
-        flex-direction: row !important;
-        gap: 4px !important;
+        flex-direction: column !important;
+        gap: 8px !important;
         margin: 0 !important;
         padding: 0 !important;
-        width: max-content !important;
-        justify-content: flex-start !important;
+        width: 100% !important;
       }
       
       .nav-item {
-        flex: 0 0 72px !important;
-        width: 72px !important;
-        flex-direction: column !important;
-        padding: 8px 4px !important;
-        gap: 6px !important;
+        width: 100% !important;
+        flex-direction: row !important;
+        padding: 12px 16px !important;
+        gap: 12px !important;
         border-radius: 12px !important;
-        justify-content: flex-start !important;
-        font-size: 10px !important;
+        font-size: 14px !important;
         font-weight: 600 !important;
       }
 
       .nav-item span {
-        font-size: 10px !important;
-        display: block !important;
-        white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
-        text-align: center !important;
-        width: 100%;
+        font-size: 14px !important;
+        text-align: left !important;
       }
 
       .nav-item svg, .nav-item i {
         width: 20px !important;
         height: 20px !important;
-        margin: 0 auto !important;
+        margin: 0 !important;
       }
 
       .nav-item.active {
-        box-shadow: inset 0 -3px 0 var(--primary) !important;
         background: var(--primary-bg, rgba(99, 102, 241, 0.1)) !important;
+        box-shadow: none !important;
+        border-left: 4px solid var(--primary) !important;
       }
       
       /* Topbar Mobile Adjustments */
       .topbar {
+        position: sticky !important; 
+        top: 0 !important;
+        height: auto !important;
         flex-direction: column;
-        gap: 16px;
+        gap: 12px;
         padding: 16px !important;
+        z-index: 999 !important; /* High z-index to prevent overlapping cards */
+        background: var(--bg-card) !important;
+        backdrop-filter: blur(24px) !important;
       }
       
       .topbar > div:first-child > button:first-child {
-        display: none !important; /* Hide sidebar toggle on mobile */
+        display: flex !important; /* Show sidebar toggle on mobile */
       }
       
       .search-box {
@@ -342,6 +356,10 @@ const GlobalDesignOverrides = () => (
       
       body, html {
         overflow-x: hidden !important;
+      }
+      
+      .mobile-hide, .float-blob {
+        display: none !important;
       }
       
       .main-content {

@@ -604,6 +604,19 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
 
   return (
     <div className="app-layout">
+      {/* Mobile Sidebar Overlay */}
+      {isSidebarCollapsed && (
+        <div 
+          className="sidebar-overlay"
+          onClick={() => setIsSidebarCollapsed(false)}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.5)', zIndex: 9999,
+            display: window.innerWidth > 992 ? 'none' : 'block'
+          }}
+        />
+      )}
+      
       {/* Sidebar */}
       <aside className={`sidebar ${isSidebarCollapsed ? 'collapsed' : ''}`} style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div className="brand">
@@ -614,34 +627,34 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
         </div>
 
         <nav className="nav-menu" style={{ flex: 1, overflowY: 'auto' }}>
-          <button className={`nav-item ${activeNav === 'overview' ? 'active' : ''}`} onClick={() => setActiveNav('overview')} title="Dashboard Overview">
+          <button className={`nav-item ${activeNav === 'overview' ? 'active' : ''}`} onClick={() => {setActiveNav('overview'); if(window.innerWidth <= 992) setIsSidebarCollapsed(false);}} title="Dashboard Overview">
             <LayoutDashboard size={20} /> Dashboard
           </button>
-          <button className={`nav-item ${activeNav === 'ai_insights' ? 'active' : ''}`} onClick={() => setActiveNav('ai_insights')} title="Pulse AI Insights">
+          <button className={`nav-item ${activeNav === 'ai_insights' ? 'active' : ''}`} onClick={() => {setActiveNav('ai_insights'); if(window.innerWidth <= 992) setIsSidebarCollapsed(false);}} title="Pulse AI Insights">
             <BrainCircuit size={20} /> AI Insights <span style={{fontSize: 10, background: '#a855f7', color: '#fff', padding: '2px 6px', borderRadius: 4, marginLeft: 'auto'}}>NEW</span>
           </button>
-          <button className={`nav-item ${activeNav === 'attendance' ? 'active' : ''}`} onClick={() => setActiveNav('attendance')} title="Attendance Logs">
+          <button className={`nav-item ${activeNav === 'attendance' ? 'active' : ''}`} onClick={() => {setActiveNav('attendance'); if(window.innerWidth <= 992) setIsSidebarCollapsed(false);}} title="Attendance Logs">
             <Clock size={20} /> Attendance Logs
           </button>
-          <button className={`nav-item ${activeNav === 'leaves' ? 'active' : ''}`} onClick={() => setActiveNav('leaves')} title="Leave Approvals">
+          <button className={`nav-item ${activeNav === 'leaves' ? 'active' : ''}`} onClick={() => {setActiveNav('leaves'); if(window.innerWidth <= 992) setIsSidebarCollapsed(false);}} title="Leave Approvals">
             <CalendarDays size={20} /> Leave Requests
           </button>
-          <button className={`nav-item ${activeNav === 'expenses' ? 'active' : ''}`} onClick={() => setActiveNav('expenses')} title="Expense & Reimbursements">
+          <button className={`nav-item ${activeNav === 'expenses' ? 'active' : ''}`} onClick={() => {setActiveNav('expenses'); if(window.innerWidth <= 992) setIsSidebarCollapsed(false);}} title="Expense & Reimbursements">
             <CreditCard size={20} /> Reimbursements
           </button>
-          <button className={`nav-item ${activeNav === 'payslips' ? 'active' : ''}`} onClick={() => setActiveNav('payslips')} title="Payroll & Payslips">
+          <button className={`nav-item ${activeNav === 'payslips' ? 'active' : ''}`} onClick={() => {setActiveNav('payslips'); if(window.innerWidth <= 992) setIsSidebarCollapsed(false);}} title="Payroll & Payslips">
             <Receipt size={20} /> Payroll & Payslips
           </button>
-          <button className={`nav-item ${activeNav === 'helpdesk' ? 'active' : ''}`} onClick={() => setActiveNav('helpdesk')} title="Support Helpdesk">
+          <button className={`nav-item ${activeNav === 'helpdesk' ? 'active' : ''}`} onClick={() => {setActiveNav('helpdesk'); if(window.innerWidth <= 992) setIsSidebarCollapsed(false);}} title="Support Helpdesk">
             <Headset size={20} /> Support Helpdesk
           </button>
-          <button className={`nav-item ${activeNav === 'employees' ? 'active' : ''}`} onClick={() => setActiveNav('employees')} title="Employee Directory">
+          <button className={`nav-item ${activeNav === 'employees' ? 'active' : ''}`} onClick={() => {setActiveNav('employees'); if(window.innerWidth <= 992) setIsSidebarCollapsed(false);}} title="Employee Directory">
             <Users size={20} /> Employee Directory
           </button>
-          <button className={`nav-item ${activeNav === 'settings' ? 'active' : ''}`} onClick={() => setActiveNav('settings')} title="Settings & Preferences">
+          <button className={`nav-item ${activeNav === 'settings' ? 'active' : ''}`} onClick={() => {setActiveNav('settings'); if(window.innerWidth <= 992) setIsSidebarCollapsed(false);}} title="Settings & Preferences">
             <Settings size={20} /> Settings & Preferences
           </button>
-          <button className={`nav-item ${activeNav === 'ot_settings' ? 'active' : ''}`} onClick={() => setActiveNav('ot_settings')} title="Overtime Settings">
+          <button className={`nav-item ${activeNav === 'ot_settings' ? 'active' : ''}`} onClick={() => {setActiveNav('ot_settings'); if(window.innerWidth <= 992) setIsSidebarCollapsed(false);}} title="Overtime Settings">
             <Zap size={20} /> Overtime Settings
           </button>
           <button className="nav-item" onClick={() => window.location.href = '/billing'} style={{ color: 'var(--primary)', border: '1px solid var(--primary)' }} title="Upgrade Subscription Plan">
