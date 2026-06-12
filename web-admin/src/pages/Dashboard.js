@@ -1690,14 +1690,14 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-                      <button className="btn btn-secondary" style={{ flex: 1, fontSize: 13, padding: '10px' }} onClick={handleGetCurrentLocation}>
+                    <div className="geofence-actions">
+                      <button className="btn btn-secondary geofence-action-btn" onClick={handleGetCurrentLocation}>
                         <MapPin size={16} style={{ marginRight: 6 }}/> Get My Location
                       </button>
-                      <button className="btn btn-secondary" style={{ flex: 1, fontSize: 13, padding: '10px' }} onClick={handleCheckCurrentDistance}>
+                      <button className="btn btn-secondary geofence-action-btn" onClick={handleCheckCurrentDistance}>
                         <Target size={16} style={{ marginRight: 6 }}/> Check Distance
                       </button>
-                      <button className="btn" style={{ flex: 1, fontSize: 13, padding: '10px' }} onClick={handleSaveGeofence}>
+                      <button className="btn geofence-action-btn" onClick={handleSaveGeofence}>
                         Save Coordinates
                       </button>
                     </div>
@@ -1904,8 +1904,8 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
       {/* Add Employee Modal */}
       {isAddEmpModalOpen && (
         <div className="modal-overlay" onClick={(e) => { if(e.target.className === 'modal-overlay') { setIsAddEmpModalOpen(false); setAddedEmpDetails(null); } }}>
-          <div className="modal-content">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
+          <div className="modal-content employee-onboard-modal">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <h2 style={{ fontSize: 24, fontWeight: 800 }}>{addedEmpDetails ? "Employee Onboarded!" : "Onboard Employee"}</h2>
               <button className="btn btn-secondary" style={{ padding: 8, borderRadius: 4, border: 'none' }} onClick={() => { setIsAddEmpModalOpen(false); setAddedEmpDetails(null); }}>
                 <X size={24} />
