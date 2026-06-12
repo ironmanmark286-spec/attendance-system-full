@@ -126,6 +126,9 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
   const [officeLat, setOfficeLat] = useState("");
   const [officeLng, setOfficeLng] = useState("");
   const [geofenceRadius, setGeofenceRadius] = useState(50);
+  const [geoAccuracy, setGeoAccuracy] = useState(null);
+  const [geoStatus, setGeoStatus] = useState("");
+  const [geoDistance, setGeoDistance] = useState(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isFabOpen, setIsFabOpen] = useState(false);
 
@@ -232,6 +235,17 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
       }
     }
     return away;
+  };
+
+  const getDistanceFromLatLonInMeters = (lat1, lon1, lat2, lon2) => {
+    const R = 6371e3;
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
   };
 
   const downloadCsv = async () => {
@@ -355,10 +369,19 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
 
   const handleSaveGeofence = async () => {
     try {
+      const lat = Number(officeLat);
+      const lng = Number(officeLng);
+      const radius = Number(geofenceRadius);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return alert("Please enter valid office latitude and longitude.");
+      }
+      if (!Number.isFinite(radius) || radius <= 0) {
+        return alert("Please enter a valid geofence radius in meters.");
+      }
       await api.put("/employees/company/geofence", {
-        office_lat: officeLat,
-        office_lng: officeLng,
-        geofence_radius: geofenceRadius
+        office_lat: lat,
+        office_lng: lng,
+        geofence_radius: radius
       });
       alert("Geofence settings saved successfully!");
       loadData();
@@ -369,16 +392,61 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
 
   const handleGetCurrentLocation = () => {
     if (navigator.geolocation) {
+      setGeoStatus("Getting high accuracy location...");
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setOfficeLat(position.coords.latitude);
-          setOfficeLng(position.coords.longitude);
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          const accuracy = Math.round(position.coords.accuracy || 0);
+          setOfficeLat(lat.toFixed(7));
+          setOfficeLng(lng.toFixed(7));
+          setGeoAccuracy(accuracy);
+          setGeoDistance(null);
+          setGeoStatus(
+            accuracy > Number(geofenceRadius || 50)
+              ? `Warning: browser accuracy is about ${accuracy}m. Laptop location may be approximate; verify before saving.`
+              : `Location captured with about ${accuracy}m accuracy.`
+          );
         },
-        (error) => alert("Failed to get location. Ensure location access is permitted.")
+        (error) => {
+          setGeoStatus("");
+          alert(error?.message || "Failed to get location. Ensure location access is permitted.");
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       );
     } else {
       alert("Geolocation is not supported by your browser.");
     }
+  };
+
+  const handleCheckCurrentDistance = () => {
+    const savedLat = Number(officeLat);
+    const savedLng = Number(officeLng);
+    if (!Number.isFinite(savedLat) || !Number.isFinite(savedLng)) {
+      return alert("Please save or enter office coordinates first.");
+    }
+    if (!navigator.geolocation) return alert("Geolocation is not supported by your browser.");
+
+    setGeoStatus("Checking distance from saved office point...");
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const distance = getDistanceFromLatLonInMeters(
+          position.coords.latitude,
+          position.coords.longitude,
+          savedLat,
+          savedLng
+        );
+        const accuracy = Math.round(position.coords.accuracy || 0);
+        setGeoAccuracy(accuracy);
+        setGeoDistance(Math.round(distance));
+        setGeoStatus(`This device is ${Math.round(distance)}m from saved office point. Browser accuracy about ${accuracy}m.`);
+      },
+      (error) => {
+        setGeoStatus("");
+        alert(error?.message || "Failed to get location. Ensure location access is permitted.");
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
   };
 
   const handlePublishNotice = async (e) => {
@@ -1626,10 +1694,39 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                       <button className="btn btn-secondary" style={{ flex: 1, fontSize: 13, padding: '10px' }} onClick={handleGetCurrentLocation}>
                         <MapPin size={16} style={{ marginRight: 6 }}/> Get My Location
                       </button>
+                      <button className="btn btn-secondary" style={{ flex: 1, fontSize: 13, padding: '10px' }} onClick={handleCheckCurrentDistance}>
+                        <Target size={16} style={{ marginRight: 6 }}/> Check Distance
+                      </button>
                       <button className="btn" style={{ flex: 1, fontSize: 13, padding: '10px' }} onClick={handleSaveGeofence}>
                         Save Coordinates
                       </button>
                     </div>
+
+                    {(geoStatus || geoAccuracy || geoDistance !== null || officeLat || officeLng) && (
+                      <div style={{ padding: 14, background: 'var(--bg-input)', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                        {geoStatus && (
+                          <div style={{ color: geoStatus.includes("Warning") || (geoDistance !== null && geoDistance > Number(geofenceRadius || 50)) ? 'var(--danger)' : 'var(--text-main)', fontWeight: 700 }}>
+                            {geoStatus}
+                          </div>
+                        )}
+                        <div>Saved office point: <strong style={{ color: 'var(--text-main)' }}>{officeLat || "-"}, {officeLng || "-"}</strong></div>
+                        {geoAccuracy ? <div>Browser accuracy: <strong style={{ color: 'var(--text-main)' }}>{geoAccuracy}m</strong></div> : null}
+                        {geoDistance !== null ? <div>Distance from saved point: <strong style={{ color: geoDistance > Number(geofenceRadius || 50) ? 'var(--danger)' : 'var(--success)' }}>{geoDistance}m</strong></div> : null}
+                        {Number.isFinite(Number(officeLat)) && Number.isFinite(Number(officeLng)) && (
+                          <a
+                            href={`https://www.google.com/maps?q=${officeLat},${officeLng}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ color: 'var(--primary)', fontWeight: 800, display: 'inline-flex', marginTop: 6 }}
+                          >
+                            Open saved point in Google Maps
+                          </a>
+                        )}
+                        <div style={{ marginTop: 6 }}>
+                          Tip: Laptop browser location can be 100-300m off. For 50m geofence, copy exact latitude/longitude from phone Google Maps at the office gate/reception, then save here.
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
