@@ -431,6 +431,20 @@ function AppContent() {
     return getProfileGeofence(profile);
   };
 
+  const refreshProfileForPunch = async () => {
+    if (!token) return profile;
+    try {
+      const { data } = await api.get("/employees/me", { headers: { Authorization: `Bearer ${token}` } });
+      const freshProfile = data || profile;
+      setProfile(freshProfile);
+      await AsyncStorage.setItem("profile", JSON.stringify(freshProfile));
+      return freshProfile;
+    } catch (e) {
+      console.log("Fresh profile fetch skipped:", e?.response?.data || e.message);
+      return profile;
+    }
+  };
+
   const startBackgroundGeofence = useCallback(async () => {
     return undefined;
   }, []);
@@ -530,7 +544,8 @@ function AppContent() {
     let addressStr = "Unknown Location";
     let locationPayload = { location: addressStr };
     try {
-      const geofence = getConfiguredGeofence();
+      const latestProfile = await refreshProfileForPunch();
+      const geofence = getProfileGeofence(latestProfile);
       const loc = await getFastLocation(Boolean(geofence));
 
       if (!loc && geofence) {
@@ -569,7 +584,7 @@ function AppContent() {
       }
     } catch (e) {
       console.log("GPS fetch skipped/failed:", e);
-      if (getConfiguredGeofence()) {
+      if (getProfileGeofence(profile)) {
         setIsLocating(false);
         return Alert.alert("GPS Error", "Location verify nahi ho payi. Please GPS/location permission check karke retry karein.");
       }
