@@ -126,6 +126,7 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
   const [officeLat, setOfficeLat] = useState("");
   const [officeLng, setOfficeLng] = useState("");
   const [geofenceRadius, setGeofenceRadius] = useState(50);
+  const [coordinatePaste, setCoordinatePaste] = useState("");
   const [geoAccuracy, setGeoAccuracy] = useState(null);
   const [geoStatus, setGeoStatus] = useState("");
   const [geoDistance, setGeoDistance] = useState(null);
@@ -416,6 +417,22 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
       );
     } else {
       alert("Geolocation is not supported by your browser.");
+    }
+  };
+
+  const handlePasteCoordinates = (value) => {
+    setCoordinatePaste(value);
+    const match = String(value).match(/(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/);
+    if (!match) return;
+
+    const lat = Number(match[1]);
+    const lng = Number(match[2]);
+    if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+      setOfficeLat(String(lat));
+      setOfficeLng(String(lng));
+      setGeoAccuracy(null);
+      setGeoDistance(null);
+      setGeoStatus("Manual coordinates filled. Click Save Coordinates to update office geofence.");
     }
   };
 
@@ -1674,6 +1691,20 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                   
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                     <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0, fontWeight: 500 }}>Restrict employee mobile punches to a specific radius around these office coordinates.</p>
+
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">Paste Coordinates Manually</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={coordinatePaste}
+                        onChange={(e) => handlePasteCoordinates(e.target.value)}
+                        placeholder="Paste from phone Maps, e.g. 28.509892, 77.379702"
+                      />
+                      <div style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 6 }}>
+                        Phone Google Maps se exact latitude, longitude copy karke yahan paste karo.
+                      </div>
+                    </div>
                     
                     <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                       <div className="form-group" style={{ flex: 1, minWidth: '120px', marginBottom: 0 }}>
