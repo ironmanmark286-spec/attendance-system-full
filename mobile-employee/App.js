@@ -6,7 +6,6 @@ import axios from "axios";
 import * as Location from "expo-location";
 import * as LocalAuthentication from "expo-local-authentication";
 import * as ImagePicker from "expo-image-picker";
-import * as TaskManager from "expo-task-manager";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, FontAwesome5, Feather } from "@expo/vector-icons";
 
@@ -29,8 +28,6 @@ const api = axios.create({
   baseURL: API_URL,
   timeout: 10000
 });
-
-const BACKGROUND_GEOFENCE_TASK = "pulsehr-background-geofence";
 
 api.interceptors.response.use(
   (response) => response,
@@ -111,67 +108,6 @@ const makeLocationPayload = (loc, location) => ({
   latitude: loc?.coords?.latitude,
   longitude: loc?.coords?.longitude,
   accuracy: loc?.coords?.accuracy
-});
-
-const getStoredProfile = async () => {
-  try {
-    const raw = await AsyncStorage.getItem("profile");
-    return raw ? JSON.parse(raw) : {};
-  } catch (e) {
-    return {};
-  }
-};
-
-TaskManager.defineTask(BACKGROUND_GEOFENCE_TASK, async ({ data, error }) => {
-  if (error) {
-    console.log("Background geofence error:", error);
-    return;
-  }
-
-  const loc = data?.locations?.[0];
-  if (!loc?.coords) return;
-
-  try {
-    const [currentToken, bgPunchedIn, storedProfile] = await Promise.all([
-      AsyncStorage.getItem("token"),
-      AsyncStorage.getItem("bgPunchedIn"),
-      getStoredProfile()
-    ]);
-
-    if (!currentToken || bgPunchedIn !== "true") return;
-
-    const geofence = getProfileGeofence(storedProfile);
-    if (!geofence) return;
-
-    const distance = getDistanceFromLatLonInMeters(
-      loc.coords.latitude,
-      loc.coords.longitude,
-      geofence.officeLat,
-      geofence.officeLng
-    );
-    const accuracy = Number(loc.coords.accuracy) || 0;
-    const effectiveDistance = Math.max(0, distance - accuracy);
-
-    if (effectiveDistance <= geofence.radius) {
-      await AsyncStorage.setItem("outsideGeofenceCount", "0");
-      return;
-    }
-
-    const currentCount = Number(await AsyncStorage.getItem("outsideGeofenceCount")) || 0;
-    const nextCount = currentCount + 1;
-    await AsyncStorage.setItem("outsideGeofenceCount", String(nextCount));
-    if (nextCount < 2) return;
-
-    await api.post(
-      "/attendance/check-out",
-      makeLocationPayload(loc, `Background auto checkout - left geofence (${Math.round(distance)}m, accuracy ${Math.round(accuracy)}m)`),
-      { headers: { Authorization: `Bearer ${currentToken}` } }
-    );
-    await AsyncStorage.setItem("bgPunchedIn", "false");
-    await AsyncStorage.setItem("outsideGeofenceCount", "0");
-  } catch (e) {
-    console.log("Background auto checkout failed:", e?.response?.data || e.message);
-  }
 });
 
 const LiveClock = React.memo(({ palette }) => {
@@ -458,7 +394,7 @@ function AppContent() {
 
     for (let i = 0; i < 3; i += 1) {
       const sample = await withTimeout(
-        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation }),
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest }),
         6000
       );
       if (sample) samples.push(sample);
@@ -496,45 +432,11 @@ function AppContent() {
   };
 
   const startBackgroundGeofence = useCallback(async () => {
-    if (!token || !isPunchedIn || !getConfiguredGeofence()) return;
-
-    try {
-      const fg = await Location.getForegroundPermissionsAsync();
-      if (fg.status !== "granted") return;
-
-      const bg = await Location.requestBackgroundPermissionsAsync();
-      if (bg.status !== "granted") {
-        console.log("Background location permission not granted.");
-        return;
-      }
-
-      const alreadyStarted = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_GEOFENCE_TASK);
-      if (alreadyStarted) return;
-
-      await Location.startLocationUpdatesAsync(BACKGROUND_GEOFENCE_TASK, {
-        accuracy: Location.Accuracy.Balanced,
-        timeInterval: 60000,
-        distanceInterval: 50,
-        pausesUpdatesAutomatically: false,
-        foregroundService: {
-          notificationTitle: "PulseHR attendance active",
-          notificationBody: "Office geofence is being monitored for auto checkout."
-        }
-      });
-    } catch (e) {
-      console.log("Start background geofence failed:", e.message);
-    }
-  }, [token, isPunchedIn, profile.office_lat, profile.office_lng, profile.geofence_radius]);
+    return undefined;
+  }, []);
 
   const stopBackgroundGeofence = useCallback(async () => {
-    try {
-      const started = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_GEOFENCE_TASK);
-      if (started) {
-        await Location.stopLocationUpdatesAsync(BACKGROUND_GEOFENCE_TASK);
-      }
-    } catch (e) {
-      console.log("Stop background geofence failed:", e.message);
-    }
+    return undefined;
   }, []);
 
   const autoCheckoutIfOutsideGeofence = useCallback(async () => {
