@@ -271,11 +271,18 @@ const GlobalDesignOverrides = () => (
       .sidebar.collapsed .nav-item {
         justify-content: flex-start !important;
         padding: 12px 16px !important;
+        font-size: 14px !important; /* Restore font size on mobile */
+        gap: 12px !important; /* Restore gap */
       }
 
       .sidebar .brand {
         display: flex !important;
         margin-bottom: 24px;
+      }
+      
+      .sidebar.collapsed .brand {
+        padding: 0 8px !important;
+        justify-content: flex-start !important;
       }
       
       .sidebar-footer {
