@@ -440,6 +440,35 @@ function AppContent() {
     return `${loc.coords.latitude.toFixed(4)}, ${loc.coords.longitude.toFixed(4)}`;
   };
 
+  const withTimeout = (promise, ms) => Promise.race([
+    promise,
+    new Promise(resolve => setTimeout(() => resolve(null), ms))
+  ]);
+
+  const getLocationAccuracy = (loc) => {
+    const accuracy = Number(loc?.coords?.accuracy);
+    return Number.isFinite(accuracy) ? accuracy : Number.MAX_SAFE_INTEGER;
+  };
+
+  const getBestFreshLocation = async () => {
+    const samples = [];
+
+    const lastKnown = await Location.getLastKnownPositionAsync({ maxAge: 10000, requiredAccuracy: 200 }).catch(() => null);
+    if (lastKnown) samples.push(lastKnown);
+
+    for (let i = 0; i < 3; i += 1) {
+      const sample = await withTimeout(
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation }),
+        6000
+      );
+      if (sample) samples.push(sample);
+      if (getLocationAccuracy(sample) <= 35) break;
+    }
+
+    samples.sort((a, b) => getLocationAccuracy(a) - getLocationAccuracy(b));
+    return samples[0] || null;
+  };
+
   const getFastLocation = async (requireFresh = false) => {
     let { status } = await Location.getForegroundPermissionsAsync();
     if (status !== 'granted') {
@@ -448,12 +477,16 @@ function AppContent() {
     }
     if (status !== 'granted') return null;
 
+    if (requireFresh) {
+      return getBestFreshLocation();
+    }
+
     let loc = requireFresh ? null : await Location.getLastKnownPositionAsync({ maxAge: 30000, requiredAccuracy: 100 });
     if (!loc) {
-      loc = await Promise.race([
+      loc = await withTimeout(
         Location.getCurrentPositionAsync({ accuracy: requireFresh ? Location.Accuracy.High : Location.Accuracy.Balanced }),
-        new Promise(resolve => setTimeout(() => resolve(null), requireFresh ? 8000 : 3000))
-      ]);
+        3000
+      );
     }
     return loc;
   };
