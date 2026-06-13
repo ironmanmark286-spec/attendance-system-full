@@ -78,6 +78,8 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
   // Data State
   const [rows, setRows] = useState([]);
   const [monthlySummary, setMonthlySummary] = useState([]);
+  const [attendanceSyncedAt, setAttendanceSyncedAt] = useState(Date.now());
+  const [monthlySyncedAt, setMonthlySyncedAt] = useState(Date.now());
   const [month, setMonth] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -206,7 +208,9 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
           setGeofenceRadius(workspaceRes.data.features?.geofence_radius ?? 50);
         }
       }
+      const syncedAt = Date.now();
       setRows(attRes.data);
+      setAttendanceSyncedAt(syncedAt);
       setStats(statsRes.data);
       setEmployees(empRes.data);
       setLeaves(leavesRes.data || []);
@@ -214,6 +218,7 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
       setPayslips(payslipsRes.data || []);
       setNotices(noticesRes.data || []);
       setMonthlySummary(monthlyRes?.data || []);
+      setMonthlySyncedAt(syncedAt);
     } catch (e) { 
       console.error(e); 
     } finally { 
@@ -234,6 +239,29 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
     const h = Math.floor(mins / 60);
     const m = mins % 60;
     return `${h}h ${m}m`;
+  };
+
+  const formatDurationSeconds = (seconds, fallbackMinutes = 0) => {
+    const total = Number.isFinite(Number(seconds)) ? Math.max(0, Math.floor(Number(seconds))) : Math.max(0, Math.floor(Number(fallbackMinutes || 0) * 60));
+    if (!total) return "-";
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  };
+
+  const getLiveAttendanceSeconds = (record) => {
+    const base = Number(record?.total_seconds ?? ((record?.total_minutes || 0) * 60));
+    if (record?.live_status !== "ACTIVE") return base;
+    return base + Math.max(0, Math.floor((liveTime.getTime() - attendanceSyncedAt) / 1000));
+  };
+
+  const getLiveSummarySeconds = (record) => {
+    const base = Number(record?.total_seconds ?? ((record?.total_minutes || 0) * 60));
+    if (!record?.has_active_session) return base;
+    return base + Math.max(0, Math.floor((liveTime.getTime() - monthlySyncedAt) / 1000));
   };
 
   const fileUrl = (path) => {
@@ -1257,10 +1285,10 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                             </div>
                           </td>
                           <td>
-                            <div style={{ fontWeight: 700, fontSize: 15 }}>{formatMins(r.total_minutes)}</div>
-                            {getAwayMinutes(r.punches) > 0 && (
+                            <div style={{ fontWeight: 700, fontSize: 15 }}>{formatDurationSeconds(getLiveAttendanceSeconds(r), r.total_minutes)}</div>
+                            {(r.away_seconds || getAwayMinutes(r.punches) > 0) && (
                               <div style={{ fontSize: 13, color: 'var(--danger)', fontWeight: 700, marginTop: 4, display: 'inline-flex', padding: '2px 8px', background: 'var(--danger-bg)', borderRadius: 6 }}>
-                                Away: {formatMins(getAwayMinutes(r.punches))}
+                                Away: {formatDurationSeconds(r.away_seconds, getAwayMinutes(r.punches))}
                               </div>
                             )}
                             {r.overtime_minutes > 0 && (
@@ -1313,7 +1341,7 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                           <td><span style={{ fontWeight: 800, color: 'var(--success)' }}>{r.total_present || 0} Days</span></td>
                           <td><span style={{ fontWeight: 800, color: 'var(--warning)' }}>{r.total_late || 0} Days</span></td>
                           <td><span style={{ fontWeight: 800, color: 'var(--primary)' }}>{formatMins(r.total_overtime)}</span></td>
-                          <td><span style={{ fontWeight: 800 }}>{formatMins(r.total_minutes)}</span></td>
+                          <td><span style={{ fontWeight: 800 }}>{formatDurationSeconds(getLiveSummarySeconds(r), r.total_minutes)}</span></td>
                         </tr>
                       ))
                     )}

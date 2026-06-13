@@ -25,32 +25,81 @@ const timeToMinutes = (timeValue, fallback = "09:00:00") => {
   return hours * 60 + minutes;
 };
 
-const calculateTotalMinutes = (logs, until = null) => {
-  let totalMinutes = 0;
+const calculateTotalSeconds = (logs, until = null) => {
+  let totalSeconds = 0;
   let lastIn = null;
   for (const log of logs) {
     if (log.punch_type === 'IN') {
       lastIn = new Date(log.punch_time);
     } else if (log.punch_type === 'OUT' && lastIn) {
       const outTime = new Date(log.punch_time);
-      totalMinutes += Math.max(0, Math.floor((outTime - lastIn) / 60000));
+      totalSeconds += Math.max(0, Math.floor((outTime - lastIn) / 1000));
       lastIn = null;
     }
   }
   if (until && lastIn) {
-    totalMinutes += Math.max(0, Math.floor((until - lastIn) / 60000));
+    totalSeconds += Math.max(0, Math.floor((until - lastIn) / 1000));
   }
-  return totalMinutes;
+  return totalSeconds;
+};
+
+const secondsToStoredMinutes = (seconds) => Math.ceil(Math.max(0, seconds) / 60);
+
+const calculateTotalMinutes = (logs, until = null) => {
+  return secondsToStoredMinutes(calculateTotalSeconds(logs, until));
+};
+
+const calculateAwaySeconds = (logs) => {
+  return logs.reduce((away, log, index) => {
+    const nextLog = logs[index + 1];
+    if (log.punch_type === 'OUT' && nextLog?.punch_type === 'IN') {
+      return away + Math.max(0, Math.floor((new Date(nextLog.punch_time) - new Date(log.punch_time)) / 1000));
+    }
+    return away;
+  }, 0);
 };
 
 const getAttendanceRuntime = (logs, now = new Date()) => {
   const lastLog = logs.length ? logs[logs.length - 1] : null;
   const lastPunch = lastLog?.punch_type || null;
-  const totalMinutes = calculateTotalMinutes(logs, lastPunch === 'IN' ? now : null);
-  const currentSessionMinutes = lastPunch === 'IN'
-    ? Math.max(0, Math.floor((now - new Date(lastLog.punch_time)) / 60000))
+  const totalSeconds = calculateTotalSeconds(logs, lastPunch === 'IN' ? now : null);
+  const totalMinutes = secondsToStoredMinutes(totalSeconds);
+  const currentSessionSeconds = lastPunch === 'IN'
+    ? Math.max(0, Math.floor((now - new Date(lastLog.punch_time)) / 1000))
     : 0;
-  return { lastPunch, totalMinutes, currentSessionMinutes };
+  return { lastPunch, totalMinutes, totalSeconds, currentSessionMinutes: secondsToStoredMinutes(currentSessionSeconds), currentSessionSeconds };
+};
+
+const getOtSettings = async (companyId) => {
+  const settings = {
+    standardWorkHours: 9,
+    otApplicableFromMinutes: 540,
+    maxDailyOTMinutes: 180
+  };
+  const [otRows] = await pool.query(
+    "SELECT standard_hours, ot_applicable_from_minutes, max_daily_ot_minutes FROM ot_settings WHERE company_id = ?",
+    [companyId]
+  );
+  if (otRows.length > 0) {
+    settings.standardWorkHours = Number(otRows[0].standard_hours) || 9;
+    settings.otApplicableFromMinutes = Number(otRows[0].ot_applicable_from_minutes) || 540;
+    settings.maxDailyOTMinutes = Number(otRows[0].max_daily_ot_minutes) || 180;
+  }
+  return settings;
+};
+
+const calculateOvertimeMinutes = (totalSeconds, otSettings) => {
+  const standardSeconds = Math.floor((otSettings.standardWorkHours || 9) * 3600);
+  const applicableFromSeconds = Math.max(0, Number(otSettings.otApplicableFromMinutes || 540) * 60);
+  const maxDailyOTMinutes = Number(otSettings.maxDailyOTMinutes || 180);
+  if (totalSeconds < applicableFromSeconds) return 0;
+
+  const overtimeSeconds = Math.max(0, totalSeconds - standardSeconds);
+  let overtimeMinutes = secondsToStoredMinutes(overtimeSeconds);
+  if (maxDailyOTMinutes > 0 && overtimeMinutes > maxDailyOTMinutes) {
+    overtimeMinutes = maxDailyOTMinutes;
+  }
+  return overtimeMinutes;
 };
 
 const getDistanceFromLatLonInMeters = (lat1, lon1, lat2, lon2) => {
@@ -247,34 +296,17 @@ router.post("/check-out", auth, roleGuard("EMPLOYEE"), async (req, res) => {
       [attId]
     );
 
-    const totalMinutes = calculateTotalMinutes(logs);
+    const runtime = getAttendanceRuntime(logs, now);
+    const totalMinutes = runtime.totalMinutes;
 
-    let standardWorkHours = 9;
-    let otApplicableFrom = 540;
-    let maxDailyOT = 180;
-
-    const [otRows] = await pool.query("SELECT standard_hours, ot_applicable_from_minutes, max_daily_ot_minutes FROM ot_settings WHERE company_id = ?", [companyId]);
-    if (otRows.length > 0) {
-      standardWorkHours = Number(otRows[0].standard_hours) || 9;
-      otApplicableFrom = Number(otRows[0].ot_applicable_from_minutes) || 540;
-      maxDailyOT = Number(otRows[0].max_daily_ot_minutes) || 180;
-    }
-
-    let overtimeMinutes = 0;
-    if (totalMinutes >= otApplicableFrom) {
-      overtimeMinutes = totalMinutes - Math.floor(standardWorkHours * 60);
-      if (maxDailyOT > 0 && overtimeMinutes > maxDailyOT) {
-        overtimeMinutes = maxDailyOT;
-      }
-      if (overtimeMinutes < 0) overtimeMinutes = 0;
-    }
+    const overtimeMinutes = calculateOvertimeMinutes(runtime.totalSeconds, await getOtSettings(companyId));
 
     await pool.query(
       "UPDATE attendance SET check_out = ?, total_minutes = ?, overtime_minutes = ?, check_out_location = ? WHERE id = ?",
       [now, totalMinutes, overtimeMinutes, location || 'Unknown', attId]
     );
 
-    return res.json({ message: "Check-out successful", totalMinutes, companyName });
+    return res.json({ message: "Check-out successful", totalMinutes, totalSeconds: runtime.totalSeconds, companyName });
   } catch (err) {
     console.error("Check-out error:", err);
     return res.status(500).json({ message: "Server error" });
@@ -312,20 +344,11 @@ router.post("/heartbeat", auth, roleGuard("EMPLOYEE"), async (req, res) => {
         [employeeId, attId, now, `🚨 LIVE TRACKER AUTO-CHECKOUT: Employee left the strict ${geofence.radius}m zone (${Math.round(distance)}m away)`]
       );
       const [logs] = await pool.query("SELECT punch_time, punch_type FROM punch_logs WHERE attendance_id = ? ORDER BY punch_time ASC", [attId]);
-      const totalMinutes = calculateTotalMinutes(logs);
-      let standardWorkHours = 9, otApplicableFrom = 540, maxDailyOT = 180;
-      const [otRows] = await pool.query("SELECT standard_hours, ot_applicable_from_minutes, max_daily_ot_minutes FROM ot_settings WHERE company_id = ?", [companyId]);
-      if (otRows.length > 0) {
-        standardWorkHours = Number(otRows[0].standard_hours) || 9; otApplicableFrom = Number(otRows[0].ot_applicable_from_minutes) || 540; maxDailyOT = Number(otRows[0].max_daily_ot_minutes) || 180;
-      }
-      let overtimeMinutes = 0;
-      if (totalMinutes >= otApplicableFrom) {
-        overtimeMinutes = totalMinutes - Math.floor(standardWorkHours * 60);
-        if (maxDailyOT > 0 && overtimeMinutes > maxDailyOT) overtimeMinutes = maxDailyOT;
-        if (overtimeMinutes < 0) overtimeMinutes = 0;
-      }
+      const runtime = getAttendanceRuntime(logs, now);
+      const totalMinutes = runtime.totalMinutes;
+      const overtimeMinutes = calculateOvertimeMinutes(runtime.totalSeconds, await getOtSettings(companyId));
       await pool.query("UPDATE attendance SET check_out = ?, total_minutes = ?, overtime_minutes = ?, check_out_location = ? WHERE id = ?", [now, totalMinutes, overtimeMinutes, `🚨 Auto-checkout: Left ${geofence.radius}m perimeter`, attId]);
-      return res.status(403).json({ status: "auto_checked_out", message: `Auto checked out due to leaving the ${geofence.radius}m zone.` });
+      return res.status(403).json({ status: "auto_checked_out", totalMinutes, totalSeconds: runtime.totalSeconds, message: `Auto checked out due to leaving the ${geofence.radius}m zone.` });
     }
     return res.json({ status: "ok", distance: effectiveDistance });
   } catch (err) {
@@ -355,7 +378,9 @@ router.get("/history", auth, roleGuard("EMPLOYEE"), async (req, res) => {
         );
         const runtime = getAttendanceRuntime(logs, now);
         row.total_minutes = runtime.totalMinutes;
+        row.total_seconds = runtime.totalSeconds;
         row.current_session_minutes = runtime.currentSessionMinutes;
+        row.current_session_seconds = runtime.currentSessionSeconds;
         row.is_punched_in = runtime.lastPunch === 'IN';
       }
     }
@@ -432,19 +457,14 @@ router.get("/today", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), async (req, r
       const [logs] = await pool.query("SELECT punch_time, punch_type FROM punch_logs WHERE attendance_id = ? ORDER BY punch_time ASC", [r.id]);
       r.punches = logs;
       const runtime = getAttendanceRuntime(logs, now);
-      const awayMinutes = (() => {
-        let away = 0;
-        for (let i = 0; i < logs.length - 1; i += 1) {
-          if (logs[i].punch_type === 'OUT' && logs[i + 1].punch_type === 'IN') {
-            away += Math.max(0, Math.floor((new Date(logs[i + 1].punch_time) - new Date(logs[i].punch_time)) / 60000));
-          }
-        }
-        return away;
-      })();
+      const awaySeconds = calculateAwaySeconds(logs);
       r.total_minutes = runtime.totalMinutes;
+      r.total_seconds = runtime.totalSeconds;
       r.current_session_minutes = runtime.currentSessionMinutes;
+      r.current_session_seconds = runtime.currentSessionSeconds;
       r.live_status = runtime.lastPunch === 'IN' ? 'ACTIVE' : (runtime.lastPunch === 'OUT' ? 'CHECKED OUT' : 'UNKNOWN');
-      r.away_minutes = awayMinutes;
+      r.away_minutes = secondsToStoredMinutes(awaySeconds);
+      r.away_seconds = awaySeconds;
     }
 
     return res.json(rows);
@@ -480,15 +500,13 @@ router.get("/logs/monthly", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), async 
       const runtime = getAttendanceRuntime(logs, now);
       r.punches = logs;
       r.total_minutes = runtime.totalMinutes;
+      r.total_seconds = runtime.totalSeconds;
       r.current_session_minutes = runtime.currentSessionMinutes;
+      r.current_session_seconds = runtime.currentSessionSeconds;
       r.live_status = runtime.lastPunch === 'IN' ? 'ACTIVE' : (runtime.lastPunch === 'OUT' ? 'CHECKED OUT' : 'UNKNOWN');
-      r.away_minutes = logs.reduce((away, log, index) => {
-        const nextLog = logs[index + 1];
-        if (log.punch_type === 'OUT' && nextLog?.punch_type === 'IN') {
-          return away + Math.max(0, Math.floor((new Date(nextLog.punch_time) - new Date(log.punch_time)) / 60000));
-        }
-        return away;
-      }, 0);
+      const awaySeconds = calculateAwaySeconds(logs);
+      r.away_minutes = secondsToStoredMinutes(awaySeconds);
+      r.away_seconds = awaySeconds;
     }
 
     return res.json(rows);
@@ -535,7 +553,7 @@ router.put("/:id/correct", auth, roleGuard("ADMIN", "HR"), async (req, res) => {
 
     let totalMinutes = null;
     if (check_in && check_out) {
-      totalMinutes = Math.max(0, Math.floor((new Date(check_out) - new Date(check_in)) / 60000));
+      totalMinutes = secondsToStoredMinutes(Math.max(0, Math.floor((new Date(check_out) - new Date(check_in)) / 1000)));
       updates.push("total_minutes = ?");
       values.push(totalMinutes);
     }
@@ -636,21 +654,52 @@ router.get("/summary/monthly", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), asy
     const [endRows] = await pool.query("SELECT LAST_DAY(?) AS last_day", [startDate]);
     const endDate = endRows[0].last_day;
 
-    const [rows] = await pool.query(
-      `SELECT e.id, e.emp_code, e.name,
-        SUM(CASE WHEN a.status IN ('PRESENT', 'LATE', 'HALF_DAY') THEN 1 ELSE 0 END) as total_present,
-        SUM(CASE WHEN a.status = 'LATE' THEN 1 ELSE 0 END) as total_late,
-        SUM(a.total_minutes) as total_minutes,
-        SUM(a.overtime_minutes) as total_overtime
-       FROM employees e
-       LEFT JOIN attendance a ON e.id = a.employee_id AND a.att_date BETWEEN ? AND ?
-       WHERE e.company_id = ? AND e.status = 'ACTIVE'
-       GROUP BY e.id, e.emp_code, e.name
-       ORDER BY e.name`,
+    const [employees] = await pool.query(
+      `SELECT id, emp_code, name
+       FROM employees
+       WHERE company_id = ? AND status = 'ACTIVE'
+       ORDER BY name`,
+      [req.user.company_id]
+    );
+
+    const [attendanceRows] = await pool.query(
+      `SELECT a.id, a.employee_id, a.status, a.overtime_minutes
+       FROM attendance a
+       JOIN employees e ON e.id = a.employee_id
+       WHERE a.att_date BETWEEN ? AND ? AND e.company_id = ?`,
       [startDate, endDate, req.user.company_id]
     );
 
-    return res.json(rows);
+    const now = new Date();
+    const byEmployee = new Map(employees.map((employee) => [employee.id, {
+      ...employee,
+      total_present: 0,
+      total_late: 0,
+      total_minutes: 0,
+      total_seconds: 0,
+      total_overtime: 0,
+      has_active_session: false
+    }]));
+
+    for (const row of attendanceRows) {
+      const summary = byEmployee.get(row.employee_id);
+      if (!summary) continue;
+
+      if (['PRESENT', 'LATE', 'HALF_DAY'].includes(row.status)) summary.total_present += 1;
+      if (row.status === 'LATE') summary.total_late += 1;
+
+      const [logs] = await pool.query(
+        "SELECT punch_time, punch_type FROM punch_logs WHERE attendance_id = ? ORDER BY punch_time ASC",
+        [row.id]
+      );
+      const runtime = getAttendanceRuntime(logs, now);
+      summary.total_minutes += runtime.totalMinutes;
+      summary.total_seconds += runtime.totalSeconds;
+      summary.total_overtime += Number(row.overtime_minutes) || 0;
+      if (runtime.lastPunch === 'IN') summary.has_active_session = true;
+    }
+
+    return res.json([...byEmployee.values()]);
   } catch (err) {
     console.error("Monthly summary error:", err);
     return res.status(500).json({ message: "Server error" });

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { View, Text, TextInput, Alert, StyleSheet, Animated, ScrollView, Modal, ActivityIndicator, KeyboardAvoidingView, Platform, Dimensions, TouchableOpacity, StatusBar, Linking, RefreshControl, AppState, Image } from "react-native";
+import { View, Text, TextInput, Alert, StyleSheet, Animated, ScrollView, Modal, ActivityIndicator, KeyboardAvoidingView, Platform, Dimensions, TouchableOpacity, StatusBar, Linking, RefreshControl, AppState, Image, PermissionsAndroid } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
@@ -93,6 +93,16 @@ const formatMins = (mins) => {
   return `${h}h ${m}m`;
 };
 
+const formatDurationSeconds = (seconds) => {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+};
+
 const getFileUrl = (path) => {
   if (!path) return null;
   if (/^https?:\/\//i.test(path)) return path;
@@ -164,6 +174,7 @@ function AppContent() {
   const [checkOutTime, setCheckOutTime] = useState("--:--");
   const [isPunchedIn, setIsPunchedIn] = useState(false);
   const [todayTotalMinutes, setTodayTotalMinutes] = useState(0);
+  const [todayTotalSeconds, setTodayTotalSeconds] = useState(0);
   const [workedMinutesSyncedAt, setWorkedMinutesSyncedAt] = useState(Date.now());
   const [workedMinutesNow, setWorkedMinutesNow] = useState(Date.now());
   const [todayOT, setTodayOT] = useState(0);
@@ -205,6 +216,7 @@ function AppContent() {
   const loginSlideAnim = useRef(new Animated.Value(50)).current;
   const logoFloatAnim = useRef(new Animated.Value(0)).current;
   const heroBreathAnim = useRef(new Animated.Value(0)).current;
+  const backgroundPermissionRequestedRef = useRef(false);
 
   useEffect(() => {
     if (!token && isAppReady) {
@@ -237,7 +249,7 @@ function AppContent() {
 
   useEffect(() => {
     if (!isPunchedIn) return undefined;
-    const timer = setInterval(() => setWorkedMinutesNow(Date.now()), 30000);
+    const timer = setInterval(() => setWorkedMinutesNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [isPunchedIn]);
 
@@ -284,6 +296,7 @@ function AppContent() {
             setIsPunchedIn(latest.is_punched_in === true);
             await AsyncStorage.setItem("bgPunchedIn", latest.is_punched_in === true ? "true" : "false");
             setTodayTotalMinutes(latest.total_minutes || 0);
+            setTodayTotalSeconds(latest.total_seconds ?? ((latest.total_minutes || 0) * 60));
             setWorkedMinutesSyncedAt(Date.now());
             setWorkedMinutesNow(Date.now());
             setTodayOT(latest.overtime_minutes || 0);
@@ -292,6 +305,7 @@ function AppContent() {
             setIsPunchedIn(false);
             await AsyncStorage.setItem("bgPunchedIn", "false");
             setTodayTotalMinutes(0);
+            setTodayTotalSeconds(0);
             setWorkedMinutesSyncedAt(Date.now());
             setWorkedMinutesNow(Date.now());
             setTodayOT(0);
@@ -301,6 +315,7 @@ function AppContent() {
             setIsPunchedIn(false);
             await AsyncStorage.setItem("bgPunchedIn", "false");
             setTodayTotalMinutes(0);
+            setTodayTotalSeconds(0);
             setWorkedMinutesSyncedAt(Date.now());
             setWorkedMinutesNow(Date.now());
             setTodayOT(0);
@@ -469,9 +484,29 @@ function AppContent() {
         return false;
       }
 
-      const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
+      if (Platform.OS === "android" && Platform.Version >= 33) {
+        await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS).catch(() => null);
+      }
+
+      let { status: bgStatus } = await Location.getBackgroundPermissionsAsync();
+      if (bgStatus !== 'granted' && !backgroundPermissionRequestedRef.current) {
+        backgroundPermissionRequestedRef.current = true;
+        const requested = await Location.requestBackgroundPermissionsAsync().catch((err) => {
+          console.log("Background permission request failed:", err);
+          return { status: "denied" };
+        });
+        bgStatus = requested.status;
+      }
+
       if (bgStatus !== 'granted') {
-        Alert.alert("Background Permission Needed", "Live tracking requires location permission set to 'Allow all the time' in Android app settings.");
+        Alert.alert(
+          "Enable Live Tracking",
+          "For automatic checkout outside 50m while the phone is locked, set Location to 'Allow all the time'. Android requires you to approve this manually.",
+          [
+            { text: "Later", style: "cancel" },
+            { text: "Open Settings", onPress: () => Linking.openSettings() }
+          ]
+        );
         return false;
       }
 
@@ -492,7 +527,7 @@ function AppContent() {
       return true;
     } catch (e) {
       console.log("Failed to start background tracking", e);
-      Alert.alert("Live Tracking Error", "Unable to start live tracking. Please reinstall the latest APK and allow background location.");
+      Alert.alert("Live Tracking Error", "Unable to start background live tracking. Punch-in is active; please reopen the app after enabling 'Allow all the time' location.");
       return false;
     }
   }, []);
@@ -523,12 +558,52 @@ function AppContent() {
 
   useEffect(() => {
     AsyncStorage.setItem("bgPunchedIn", isPunchedIn ? "true" : "false");
-    if (token && isPunchedIn) {
-      startBackgroundGeofence();
-    } else {
+    if (!isPunchedIn) {
+      backgroundPermissionRequestedRef.current = false;
       stopBackgroundGeofence();
     }
-  }, [token, isPunchedIn, startBackgroundGeofence, stopBackgroundGeofence]);
+  }, [isPunchedIn, stopBackgroundGeofence]);
+
+  useEffect(() => {
+    if (!token || !isPunchedIn) return undefined;
+    const subscription = AppState.addEventListener("change", async (state) => {
+      if (state !== "active") return;
+      const { status } = await Location.getBackgroundPermissionsAsync().catch(() => ({ status: "denied" }));
+      if (status === "granted") {
+        startBackgroundGeofence();
+      }
+    });
+    return () => subscription.remove();
+  }, [token, isPunchedIn, startBackgroundGeofence]);
+
+  useEffect(() => {
+    if (!token || !isPunchedIn) return undefined;
+    const sendHeartbeat = async () => {
+      try {
+        const loc = await getFastLocation(false);
+        if (!loc?.coords) return;
+        await api.post("/attendance/heartbeat", {
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude,
+          accuracy: loc.coords.accuracy
+        }, { headers: { Authorization: `Bearer ${token}` } });
+      } catch (err) {
+        if (err?.response?.data?.status === "auto_checked_out" || err?.response?.status === 403) {
+          await AsyncStorage.setItem("bgPunchedIn", "false");
+          setIsPunchedIn(false);
+          if (typeof err?.response?.data?.totalSeconds === "number") {
+            setTodayTotalSeconds(err.response.data.totalSeconds);
+            setTodayTotalMinutes(err.response.data.totalMinutes || Math.ceil(err.response.data.totalSeconds / 60));
+          }
+          Alert.alert("Auto Check-Out", err?.response?.data?.message || "You were checked out for leaving the office geofence.");
+          loadData(token);
+        }
+      }
+    };
+    sendHeartbeat();
+    const timer = setInterval(sendHeartbeat, 60000);
+    return () => clearInterval(timer);
+  }, [token, isPunchedIn]);
 
   const handleLocationAction = async (type) => {
     setIsLocating(true);
@@ -585,14 +660,23 @@ function AppContent() {
       if (type === 'In') {
         setCheckInTime(nowStr);
         setIsPunchedIn(true);
+        setTodayTotalSeconds(0);
+        setWorkedMinutesSyncedAt(Date.now());
+        setWorkedMinutesNow(Date.now());
         await AsyncStorage.setItem("bgPunchedIn", "true");
+        startBackgroundGeofence();
       } else {
         setCheckOutTime(nowStr);
         setIsPunchedIn(false);
+        if (typeof data.totalSeconds === "number") {
+          setTodayTotalSeconds(data.totalSeconds);
+          setTodayTotalMinutes(data.totalMinutes || Math.ceil(data.totalSeconds / 60));
+        }
         await AsyncStorage.setItem("bgPunchedIn", "false");
+        stopBackgroundGeofence();
       }
       await loadData(token); // Ensure full reload state updates button instantly
-      Alert.alert("Success", type === 'In' ? `Checked in instantly at ${data.companyName || 'Workspace'}.` : `Checked out successfully. Total: ${data.totalMinutes || 0} mins`);
+      Alert.alert("Success", type === 'In' ? `Checked in instantly at ${data.companyName || 'Workspace'}.` : `Checked out successfully. Total: ${formatDurationSeconds(data.totalSeconds ?? ((data.totalMinutes || 0) * 60))}`);
     } catch (e) {
       Alert.alert("Error", e?.response?.data?.message || "Operation failed");
     } finally {
@@ -715,9 +799,9 @@ function AppContent() {
 
   const tabBarBottom = Math.max(insets.bottom, 12) + 8;
   const contentPadBottom = 76 + tabBarBottom;
-  const displayedTotalMinutes = isPunchedIn
-    ? todayTotalMinutes + Math.max(0, Math.floor((workedMinutesNow - workedMinutesSyncedAt) / 60000))
-    : todayTotalMinutes;
+  const displayedTotalSeconds = isPunchedIn
+    ? todayTotalSeconds + Math.max(0, Math.floor((workedMinutesNow - workedMinutesSyncedAt) / 1000))
+    : todayTotalSeconds;
   const heroScale = heroBreathAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.045] });
   const heroOpacity = heroBreathAnim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] });
   const switchTab = (tab) => {
@@ -917,7 +1001,7 @@ function AppContent() {
               <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 16, marginBottom: 32 }}>
                  <View style={{ alignItems: 'center' }}>
                     <Text style={{ color: palette.textSecondary, fontSize: 11, fontWeight: '700' }}>TOTAL WORKED</Text>
-                    <Text style={{ color: palette.textPrimary, fontSize: 16, fontWeight: '800' }}>{formatMins(displayedTotalMinutes)}</Text>
+                    <Text style={{ color: palette.textPrimary, fontSize: 16, fontWeight: '800' }}>{formatDurationSeconds(displayedTotalSeconds)}</Text>
                  </View>
                  <View style={{ width: 1, backgroundColor: palette.border }} />
                  <View style={{ alignItems: 'center' }}>
@@ -1017,7 +1101,7 @@ function AppContent() {
                     </View>
                     <View style={{ marginTop: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: palette.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Text style={{ color: palette.textSecondary, fontSize: 12, fontWeight: '600' }} numberOfLines={1}><Ionicons name="location-outline" size={12}/> {item.check_in_location?.substring(0, 18) || 'Unknown'}</Text>
-                      <Text style={{ color: palette.primary, fontSize: 14, fontWeight: '900' }}>{formatMins(item.total_minutes)}</Text>
+                      <Text style={{ color: palette.primary, fontSize: 14, fontWeight: '900' }}>{formatDurationSeconds(item.total_seconds ?? ((item.total_minutes || 0) * 60))}</Text>
                     </View>
                   </View>
                 </View>
