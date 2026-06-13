@@ -485,7 +485,7 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    if (!token) return profile;
+    if (!token) return undefined;
     const interval = setInterval(async () => {
       const bgFlag = await AsyncStorage.getItem("bgPunchedIn");
       if (bgFlag === "false" && isPunchedIn) {

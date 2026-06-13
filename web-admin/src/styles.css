@@ -406,6 +406,40 @@ tbody tr:hover {
 tbody tr:hover td { color: var(--primary); }
 tr:last-child td { border-bottom: none; }
 
+.attendance-log-table-wrapper {
+  overflow-x: auto;
+}
+
+.attendance-log-table {
+  table-layout: fixed;
+  min-width: 960px;
+}
+
+.attendance-log-table th,
+.attendance-log-table td {
+  padding-left: 22px;
+  padding-right: 22px;
+}
+
+.attendance-log-table .attendance-col-employee { width: 14%; }
+.attendance-log-table .attendance-col-time { width: 17%; }
+.attendance-log-table .attendance-col-location { width: 27%; }
+.attendance-log-table .attendance-col-duration { width: 17%; }
+.attendance-log-table .attendance-col-status { width: 16%; }
+.attendance-log-table .attendance-col-actions { width: 120px; }
+
+.attendance-log-table td:last-child,
+.attendance-log-table th:last-child {
+  padding-right: 22px;
+  text-align: right;
+}
+
+.attendance-log-table td:last-child .btn {
+  min-width: 102px;
+  padding-left: 12px !important;
+  padding-right: 12px !important;
+}
+
 /* Vibrant Badges */
 .badge {
   display: inline-flex;
@@ -446,6 +480,31 @@ tr:last-child td { border-bottom: none; }
   background: var(--bg-card);
   box-shadow: 0 0 0 4px var(--primary-bg), 0 4px 15px rgba(0,0,0,0.05);
   transform: translateY(-1px);
+}
+
+.settings-switch {
+  flex: 0 0 52px;
+  min-width: 52px;
+  max-width: 52px;
+  width: 52px !important;
+  height: 30px !important;
+}
+
+.settings-switch input {
+  position: absolute;
+}
+
+.ot-setting-row {
+  gap: 14px;
+}
+
+.ot-setting-info {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ot-setting-info > div:last-child {
+  min-width: 0;
 }
 
 /* Modal Overlay (Ultra Blur) */

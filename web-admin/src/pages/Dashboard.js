@@ -391,35 +391,6 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
     }
   };
 
-  const handleGetCurrentLocation = () => {
-    if (navigator.geolocation) {
-      setGeoStatus("Getting high accuracy location...");
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const lat = position.coords.latitude;
-          const lng = position.coords.longitude;
-          const accuracy = Math.round(position.coords.accuracy || 0);
-          setOfficeLat(lat.toFixed(7));
-          setOfficeLng(lng.toFixed(7));
-          setGeoAccuracy(accuracy);
-          setGeoDistance(null);
-          setGeoStatus(
-            accuracy > Number(geofenceRadius || 50)
-              ? `Warning: browser accuracy is about ${accuracy}m. Laptop location may be approximate; verify before saving.`
-              : `Location captured with about ${accuracy}m accuracy.`
-          );
-        },
-        (error) => {
-          setGeoStatus("");
-          alert(error?.message || "Failed to get location. Ensure location access is permitted.");
-        },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-      );
-    } else {
-      alert("Geolocation is not supported by your browser.");
-    }
-  };
-
   const handlePasteCoordinates = (value) => {
     setCoordinatePaste(value);
     const match = String(value).match(/(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/);
@@ -434,36 +405,6 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
       setGeoDistance(null);
       setGeoStatus("Manual coordinates filled. Click Save Coordinates to update office geofence.");
     }
-  };
-
-  const handleCheckCurrentDistance = () => {
-    const savedLat = Number(officeLat);
-    const savedLng = Number(officeLng);
-    if (!Number.isFinite(savedLat) || !Number.isFinite(savedLng)) {
-      return alert("Please save or enter office coordinates first.");
-    }
-    if (!navigator.geolocation) return alert("Geolocation is not supported by your browser.");
-
-    setGeoStatus("Checking distance from saved office point...");
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const distance = getDistanceFromLatLonInMeters(
-          position.coords.latitude,
-          position.coords.longitude,
-          savedLat,
-          savedLng
-        );
-        const accuracy = Math.round(position.coords.accuracy || 0);
-        setGeoAccuracy(accuracy);
-        setGeoDistance(Math.round(distance));
-        setGeoStatus(`This device is ${Math.round(distance)}m from saved office point. Browser accuracy about ${accuracy}m.`);
-      },
-      (error) => {
-        setGeoStatus("");
-        alert(error?.message || "Failed to get location. Ensure location access is permitted.");
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-    );
   };
 
   const handlePublishNotice = async (e) => {
@@ -1238,8 +1179,16 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
               </div>
 
               {attendanceView === 'daily' ? (
-              <div className="table-wrapper fade-in-up stagger-2">
-                <table>
+              <div className="table-wrapper attendance-log-table-wrapper fade-in-up stagger-2">
+                <table className="attendance-log-table">
+                  <colgroup>
+                    <col className="attendance-col-employee" />
+                    <col className="attendance-col-time" />
+                    <col className="attendance-col-location" />
+                    <col className="attendance-col-duration" />
+                    <col className="attendance-col-status" />
+                    <col className="attendance-col-actions" />
+                  </colgroup>
                   <thead>
                     <tr>
                       <th>Employee</th>
@@ -1725,12 +1674,6 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                     </div>
 
                     <div className="geofence-actions">
-                      <button className="btn btn-secondary geofence-action-btn" onClick={handleGetCurrentLocation}>
-                        <MapPin size={16} style={{ marginRight: 6 }}/> Get Admin Location
-                      </button>
-                      <button className="btn btn-secondary geofence-action-btn" onClick={handleCheckCurrentDistance}>
-                        <Target size={16} style={{ marginRight: 6 }}/> Check Distance
-                      </button>
                       <button className="btn geofence-action-btn" onClick={handleSaveGeofence} style={{ background: 'var(--danger)', color: '#fff', border: 'none' }}>
                         <CheckCircle2 size={16} style={{ marginRight: 6 }}/> Activate Live Tracking
                       </button>
@@ -1891,15 +1834,15 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                   <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 10 }}><Clock size={20} color="var(--primary)"/> Overtime (OT) Setup</h3>
                   
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 16, background: 'var(--bg-input)', borderRadius: 4, border: '1px solid var(--border)' }}>
-                      <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                    <div className="ot-setting-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 16, background: 'var(--bg-input)', borderRadius: 4, border: '1px solid var(--border)' }}>
+                      <div className="ot-setting-info" style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
                         <div style={{ background: 'var(--bg-card)', padding: 10, borderRadius: 4, border: '1px solid var(--border)' }}><Activity size={20} color="var(--success)" /></div>
                         <div>
                           <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--text-main)' }}>Enable OT Calculation</div>
                           <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4, fontWeight: 500 }}>Automatically calculate overtime</div>
                         </div>
                       </div>
-                      <label style={{ position: 'relative', display: 'inline-block', width: 52, height: 30 }}>
+                      <label className="settings-switch" style={{ position: 'relative', display: 'inline-block', width: 52, height: 30 }}>
                         <input type="checkbox" checked={enableOT} onChange={() => setEnableOT(!enableOT)} style={{ opacity: 0, width: 0, height: 0 }} />
                         <span style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: enableOT ? 'var(--success)' : 'var(--border)', borderRadius: 34, transition: '0.3s' }}>
                           <span style={{ position: 'absolute', height: 22, width: 22, left: 4, bottom: 4, backgroundColor: '#fff', borderRadius: '50%', transition: '0.3s', transform: enableOT ? 'translateX(22px)' : 'none', boxShadow: 'var(--shadow-sm)' }}></span>
