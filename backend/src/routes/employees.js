@@ -99,9 +99,9 @@ router.get("/me", auth, async (req, res) => {
       shift_end_time: e.shift_end_time,
       standard_hours: e.standard_hours,
       weekly_off_days: e.weekly_off_days,
-      office_lat: settings.office_lat || null,
-      office_lng: settings.office_lng || null,
-      geofence_radius: settings.geofence_radius || 50 // default 50 meters limit
+      office_lat: settings.office_lat ?? null,
+      office_lng: settings.office_lng ?? null,
+      geofence_radius: settings.geofence_radius ?? 50 // default 50 meters limit
     });
   } catch (err) {
     console.error("Error fetching employee profile:", err);
@@ -337,17 +337,31 @@ router.put("/company", auth, roles("ADMIN"), async (req, res) => {
 router.put("/company/geofence", auth, roles("ADMIN"), async (req, res) => {
   try {
     const { office_lat, office_lng, geofence_radius } = req.body;
+    const lat = Number(office_lat);
+    const lng = Number(office_lng);
+    const radius = Number(geofence_radius);
+
+    if (!Number.isFinite(lat) || Math.abs(lat) > 90) {
+      return res.status(400).json({ message: "Valid office latitude is required." });
+    }
+    if (!Number.isFinite(lng) || Math.abs(lng) > 180) {
+      return res.status(400).json({ message: "Valid office longitude is required." });
+    }
+    if (!Number.isFinite(radius) || radius <= 0) {
+      return res.status(400).json({ message: "Valid geofence radius is required." });
+    }
+
     const [rows] = await pool.query("SELECT settings FROM companies WHERE id = ?", [req.user.company_id]);
     let settings = {};
     if (rows.length > 0) {
       try { settings = JSON.parse(rows[0].settings || "{}"); } catch(e){}
     }
-    settings.office_lat = office_lat ? parseFloat(office_lat) : null;
-    settings.office_lng = office_lng ? parseFloat(office_lng) : null;
-    settings.geofence_radius = geofence_radius ? parseInt(geofence_radius, 10) : 50;
+    settings.office_lat = lat;
+    settings.office_lng = lng;
+    settings.geofence_radius = Math.round(radius);
 
     await pool.query("UPDATE companies SET settings = ? WHERE id = ?", [JSON.stringify(settings), req.user.company_id]);
-    res.json({ message: "Geofence settings updated successfully" });
+    res.json({ message: "Geofence settings updated successfully", settings });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error" });

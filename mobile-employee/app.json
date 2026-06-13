@@ -21,8 +21,7 @@
       },
       "package": "com.yourcompany.pulsehr",
       "permissions": [
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION"
+        "POST_NOTIFICATIONS"
       ]
     },
     "extra": {
@@ -36,8 +35,9 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "Allow PulseHR to verify office location for attendance.",
-          "isAndroidBackgroundLocationEnabled": false,
-          "isAndroidForegroundServiceEnabled": false
+          "locationAlwaysAndWhenInUsePermission": "Allow PulseHR to keep live tracking active during your punched-in shift.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
         }
       ],
       [

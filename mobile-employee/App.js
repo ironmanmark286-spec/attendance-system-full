@@ -450,26 +450,36 @@ function AppContent() {
   const startBackgroundGeofence = useCallback(async () => {
     try {
       const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
-      if (fgStatus === 'granted') {
-        const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
-        if (bgStatus === 'granted') {
-          await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
-            accuracy: Location.Accuracy.Highest,
-            timeInterval: 60000,
-            distanceInterval: 10,
-            showsBackgroundLocationIndicator: true,
-            foregroundService: {
-              notificationTitle: "PulseHR Live Tracking",
-              notificationBody: "Monitoring location for strict 50m geofence compliance.",
-              notificationColor: "#10b981",
-            }
-          });
-        } else {
-          Alert.alert("Background Permission Needed", "Strict geofencing requires 'Allow all the time' location access to auto-checkout when you leave the 50m zone.");
-        }
+      if (fgStatus !== 'granted') {
+        Alert.alert("Location Permission Needed", "Please allow location access to enable live attendance tracking.");
+        return false;
       }
+
+      const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
+      if (bgStatus !== 'granted') {
+        Alert.alert("Background Permission Needed", "Live tracking requires location permission set to 'Allow all the time' in Android app settings.");
+        return false;
+      }
+
+      const hasStarted = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+      if (!hasStarted) {
+        await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
+          accuracy: Location.Accuracy.Highest,
+          timeInterval: 60000,
+          distanceInterval: 10,
+          showsBackgroundLocationIndicator: true,
+          foregroundService: {
+            notificationTitle: "PulseHR Live Tracking",
+            notificationBody: "Monitoring location for strict 50m geofence compliance.",
+            notificationColor: "#10b981",
+          }
+        });
+      }
+      return true;
     } catch (e) {
       console.log("Failed to start background tracking", e);
+      Alert.alert("Live Tracking Error", "Unable to start live tracking. Please reinstall the latest APK and allow background location.");
+      return false;
     }
   }, []);
 

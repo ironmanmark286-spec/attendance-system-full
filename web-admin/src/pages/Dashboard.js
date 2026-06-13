@@ -127,11 +127,23 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
   const [officeLng, setOfficeLng] = useState("");
   const [geofenceRadius, setGeofenceRadius] = useState(50);
   const [coordinatePaste, setCoordinatePaste] = useState("");
+  const [isGeofenceDirty, setIsGeofenceDirty] = useState(false);
   const [geoAccuracy, setGeoAccuracy] = useState(null);
   const [geoStatus, setGeoStatus] = useState("");
   const [geoDistance, setGeoDistance] = useState(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isFabOpen, setIsFabOpen] = useState(false);
+  const geofenceDirtyRef = useRef(false);
+
+  const markGeofenceDirty = () => {
+    geofenceDirtyRef.current = true;
+    setIsGeofenceDirty(true);
+  };
+
+  const markGeofenceSaved = () => {
+    geofenceDirtyRef.current = false;
+    setIsGeofenceDirty(false);
+  };
 
   useEffect(() => {
     const targets = [document.documentElement, document.body];
@@ -188,9 +200,11 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
       if (billingRes.data) setSubscription(billingRes.data);
       if (workspaceRes.data) {
         setWorkspace(workspaceRes.data);
-        setOfficeLat(workspaceRes.data.features?.office_lat || "");
-        setOfficeLng(workspaceRes.data.features?.office_lng || "");
-        setGeofenceRadius(workspaceRes.data.features?.geofence_radius || 50);
+        if (!geofenceDirtyRef.current) {
+          setOfficeLat(workspaceRes.data.features?.office_lat ?? "");
+          setOfficeLng(workspaceRes.data.features?.office_lng ?? "");
+          setGeofenceRadius(workspaceRes.data.features?.geofence_radius ?? 50);
+        }
       }
       setRows(attRes.data);
       setStats(statsRes.data);
@@ -379,20 +393,26 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
       if (!Number.isFinite(radius) || radius <= 0) {
         return alert("Please enter a valid geofence radius in meters.");
       }
-      await api.put("/employees/company/geofence", {
+      const { data } = await api.put("/employees/company/geofence", {
         office_lat: lat,
         office_lng: lng,
         geofence_radius: radius
       });
+      const saved = data?.settings || {};
+      setOfficeLat(saved.office_lat ?? lat);
+      setOfficeLng(saved.office_lng ?? lng);
+      setGeofenceRadius(saved.geofence_radius ?? radius);
+      markGeofenceSaved();
       alert("Geofence settings saved successfully!");
       loadData();
     } catch (err) {
-      alert("Failed to save geofence settings");
+      alert(err.response?.data?.message || "Failed to save geofence settings");
     }
   };
 
   const handlePasteCoordinates = (value) => {
     setCoordinatePaste(value);
+    markGeofenceDirty();
     const match = String(value).match(/(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/);
     if (!match) return;
 
@@ -1660,23 +1680,28 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                     <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                       <div className="form-group" style={{ flex: 1, minWidth: '120px', marginBottom: 0 }}>
                         <label className="form-label">Office Latitude</label>
-                        <input type="number" step="any" className="form-control" value={officeLat} onChange={(e) => setOfficeLat(e.target.value)} placeholder="e.g. 28.6139" />
+                        <input type="number" step="any" className="form-control" value={officeLat} onChange={(e) => { markGeofenceDirty(); setOfficeLat(e.target.value); }} placeholder="e.g. 28.6139" />
                       </div>
                       <div className="form-group" style={{ flex: 1, minWidth: '120px', marginBottom: 0 }}>
                         <label className="form-label">Office Longitude</label>
-                        <input type="number" step="any" className="form-control" value={officeLng} onChange={(e) => setOfficeLng(e.target.value)} placeholder="e.g. 77.2090" />
+                        <input type="number" step="any" className="form-control" value={officeLng} onChange={(e) => { markGeofenceDirty(); setOfficeLng(e.target.value); }} placeholder="e.g. 77.2090" />
                       </div>
                       <div className="form-group" style={{ flex: 1, minWidth: '100px', marginBottom: 0 }}>
                         <label className="form-label">Strict Radius (m)</label>
-                        <input type="number" className="form-control" value={geofenceRadius} onChange={(e) => setGeofenceRadius(e.target.value)} placeholder="e.g. 50" />
+                        <input type="number" className="form-control" value={geofenceRadius} onChange={(e) => { markGeofenceDirty(); setGeofenceRadius(e.target.value); }} placeholder="e.g. 50" />
                         <small style={{ color: 'var(--text-muted)' }}>Default is strictly 50m.</small>
                       </div>
                     </div>
 
                     <div className="geofence-actions">
                       <button className="btn geofence-action-btn" onClick={handleSaveGeofence} style={{ background: 'var(--danger)', color: '#fff', border: 'none' }}>
-                        <CheckCircle2 size={16} style={{ marginRight: 6 }}/> Activate Live Tracking
+                        <CheckCircle2 size={16} style={{ marginRight: 6 }}/> Save Coordinates & Activate
                       </button>
+                      {isGeofenceDirty && (
+                        <span style={{ color: 'var(--warning)', fontSize: 12, fontWeight: 800 }}>
+                          Unsaved coordinates
+                        </span>
+                      )}
                     </div>
 
                     {(geoStatus || geoAccuracy || geoDistance !== null || officeLat || officeLng) && (

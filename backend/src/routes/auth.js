@@ -192,13 +192,14 @@ router.get("/workspace", async (req, res) => {
     if (!rows.length) return res.status(404).json({ message: "Workspace not found" });
 
     const company = rows[0];
-    let settings = DEFAULT_COMPANY_SETTINGS;
+    let settings = { ...DEFAULT_COMPANY_SETTINGS };
     try {
-      settings = typeof company.settings === "string"
+      const savedSettings = typeof company.settings === "string"
         ? JSON.parse(company.settings)
         : (company.settings || DEFAULT_COMPANY_SETTINGS);
+      settings = { ...DEFAULT_COMPANY_SETTINGS, ...savedSettings };
     } catch {
-      settings = DEFAULT_COMPANY_SETTINGS;
+      settings = { ...DEFAULT_COMPANY_SETTINGS };
     }
 
     res.json({
