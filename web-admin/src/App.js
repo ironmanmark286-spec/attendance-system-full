@@ -450,6 +450,229 @@ const GlobalDesignOverrides = () => (
         align-items: flex-start;
       }
     }
+
+    /* Premium PulseHR Refresh */
+    :root {
+      --surface-tint: rgba(255, 255, 255, 0.74);
+      --surface-strong: rgba(255, 255, 255, 0.92);
+      --focus-ring: rgba(14, 165, 233, 0.18);
+      --accent-cyan: #0ea5e9;
+      --accent-rose: #e11d48;
+      --accent-amber: #f59e0b;
+      --accent-green: #10b981;
+    }
+
+    html.theme-light, body.theme-light {
+      --bg-app: #edf3f8;
+      --bg-card: rgba(255, 255, 255, 0.78);
+      --bg-input: rgba(248, 250, 252, 0.9);
+      --bg-hover: rgba(255, 255, 255, 0.94);
+      --border: rgba(15, 23, 42, 0.09);
+      --border-strong: rgba(15, 23, 42, 0.14);
+      --text-main: #0b1220;
+      --text-muted: #526174;
+      --primary-glow: rgba(14, 165, 233, 0.24);
+    }
+
+    html.theme-dark, body.theme-dark {
+      --bg-app: #071017;
+      --bg-card: rgba(13, 24, 34, 0.76);
+      --bg-input: rgba(20, 35, 47, 0.82);
+      --bg-hover: rgba(25, 44, 58, 0.9);
+      --border: rgba(148, 163, 184, 0.12);
+      --border-strong: rgba(148, 163, 184, 0.2);
+      --text-main: #f8fbff;
+      --text-muted: #9fb0bf;
+      --primary-glow: rgba(14, 165, 233, 0.34);
+    }
+
+    body {
+      background-color: var(--bg-app) !important;
+      background-image:
+        radial-gradient(circle at 12% 10%, rgba(14, 165, 233, 0.16), transparent 30%),
+        radial-gradient(circle at 88% 18%, rgba(16, 185, 129, 0.12), transparent 28%),
+        radial-gradient(circle at 76% 86%, rgba(225, 29, 72, 0.09), transparent 30%),
+        linear-gradient(135deg, rgba(255,255,255,0.22), transparent 42%) !important;
+    }
+
+    html.theme-dark body {
+      background-image:
+        radial-gradient(circle at 12% 10%, rgba(14, 165, 233, 0.2), transparent 30%),
+        radial-gradient(circle at 88% 18%, rgba(16, 185, 129, 0.11), transparent 28%),
+        radial-gradient(circle at 76% 86%, rgba(225, 29, 72, 0.1), transparent 30%),
+        linear-gradient(135deg, rgba(255,255,255,0.04), transparent 42%) !important;
+    }
+
+    .app-layout::before {
+      content: "";
+      position: fixed;
+      inset: 16px;
+      pointer-events: none;
+      border-radius: 30px;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px),
+        linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px);
+      background-size: 64px 64px;
+      mask-image: radial-gradient(circle at 50% 20%, black, transparent 70%);
+      opacity: 0.28;
+      z-index: 0;
+    }
+
+    .sidebar, .topbar, .card, .bento-card, .employee-card, .table-wrapper, .table-container, .modal-content {
+      background: linear-gradient(145deg, var(--bg-card), rgba(255,255,255,0.08)) !important;
+      border: 1px solid var(--border) !important;
+      box-shadow: 0 24px 70px -44px rgba(2, 8, 23, 0.55), inset 0 1px 0 rgba(255,255,255,0.16) !important;
+    }
+
+    .sidebar {
+      border-radius: 22px !important;
+    }
+
+    .brand > div, .avatar {
+      background: conic-gradient(from 160deg, var(--accent-cyan), var(--accent-green), var(--accent-amber), var(--accent-rose), var(--accent-cyan)) !important;
+      box-shadow: 0 16px 34px -18px var(--primary), inset 0 1px 0 rgba(255,255,255,0.36) !important;
+    }
+
+    .nav-item {
+      border-radius: 14px !important;
+      isolation: isolate;
+    }
+
+    .nav-item:hover {
+      background: var(--bg-hover) !important;
+      transform: translateX(3px) !important;
+      border-color: var(--border-strong) !important;
+    }
+
+    .nav-item.active {
+      background: linear-gradient(135deg, var(--primary), var(--accent-cyan)) !important;
+      color: #ffffff !important;
+      box-shadow: 0 16px 28px -18px var(--primary), inset 0 1px 0 rgba(255,255,255,0.22) !important;
+    }
+
+    .topbar {
+      min-height: 78px;
+    }
+
+    .search-box, .form-control {
+      background: var(--bg-input) !important;
+      border: 1px solid var(--border) !important;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.12) !important;
+    }
+
+    .search-box:focus-within, .form-control:focus {
+      border-color: var(--accent-cyan) !important;
+      box-shadow: 0 0 0 4px var(--focus-ring), inset 0 1px 0 rgba(255,255,255,0.16) !important;
+    }
+
+    .page-container {
+      position: relative;
+      z-index: 1;
+      padding-top: 32px !important;
+    }
+
+    .page-title {
+      letter-spacing: 0 !important;
+    }
+
+    .card, .bento-card {
+      border-radius: 18px !important;
+    }
+
+    .hover-lift, .card, .bento-card, .employee-card, .fab-item {
+      transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease, background 220ms ease !important;
+    }
+
+    .hover-lift:hover, .card:hover, .bento-card:hover, .employee-card:hover {
+      transform: translateY(-5px) !important;
+      border-color: rgba(14, 165, 233, 0.36) !important;
+      box-shadow: 0 30px 82px -46px rgba(2, 8, 23, 0.72), 0 0 0 1px rgba(14,165,233,0.08) !important;
+    }
+
+    .btn {
+      min-height: 42px;
+      border-radius: 12px !important;
+      text-transform: none !important;
+      letter-spacing: 0 !important;
+      background: linear-gradient(135deg, var(--primary), var(--accent-cyan)) !important;
+      box-shadow: 0 15px 30px -18px var(--primary) !important;
+    }
+
+    .btn-secondary {
+      background: var(--bg-input) !important;
+      color: var(--text-main) !important;
+      box-shadow: none !important;
+    }
+
+    .badge {
+      border-radius: 999px !important;
+      letter-spacing: 0 !important;
+    }
+
+    th {
+      background: rgba(14, 165, 233, 0.06) !important;
+      letter-spacing: 0.04em !important;
+    }
+
+    tbody tr:hover {
+      background: rgba(14, 165, 233, 0.06) !important;
+      transform: none !important;
+    }
+
+    .fab-container > button, button[style*="borderRadius: '50%'"] {
+      box-shadow: 0 18px 36px -18px var(--primary) !important;
+    }
+
+    .modal-overlay {
+      background: rgba(2, 8, 23, 0.52) !important;
+    }
+
+    .modal-content {
+      border-radius: 20px !important;
+    }
+
+    body:not(.reduced-motion) .nav-item.active svg,
+    body:not(.reduced-motion) .avatar,
+    body:not(.reduced-motion) .fab-container > button {
+      animation: pulsePolish 3.8s ease-in-out infinite;
+    }
+
+    @keyframes pulsePolish {
+      0%, 100% { filter: brightness(1); }
+      50% { filter: brightness(1.12); }
+    }
+
+    body.reduced-motion *, body.reduced-motion *::before, body.reduced-motion *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+
+    @media (max-width: 992px) {
+      .app-layout::before {
+        inset: 0;
+        border-radius: 0;
+      }
+
+      .topbar {
+        border-radius: 18px !important;
+        margin-bottom: 12px !important;
+      }
+
+      .page-container {
+        padding: 14px 8px 120px !important;
+      }
+
+      .card, .bento-card, .employee-card, .table-wrapper, .table-container {
+        border-radius: 16px !important;
+      }
+
+      .btn {
+        width: auto;
+        max-width: 100%;
+        white-space: normal !important;
+      }
+    }
   `}</style>
 );
 

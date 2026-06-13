@@ -58,7 +58,7 @@ const getCompanyGeofence = async (companyId) => {
   try { settings = JSON.parse(rows[0].settings || "{}"); } catch (e) {}
   const officeLat = Number(settings.office_lat);
   const officeLng = Number(settings.office_lng);
-  const radius = Number(settings.geofence_radius);
+  const radius = Number(settings.geofence_radius) || 50;
   if (!Number.isFinite(officeLat) || !Number.isFinite(officeLng) || !Number.isFinite(radius) || radius <= 0) {
     return null;
   }
@@ -74,21 +74,21 @@ const validateServerGeofence = async ({ companyId, latitude, longitude, accuracy
   const acc = Math.max(0, Number(accuracy) || 0);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return {
-      ok: punchType === 'OUT',
+      ok: false,
       geofence,
-      message: "GPS coordinates are required because office geofence is enabled."
+      message: "🔴 Live Tracking Active: Turn on GPS to verify you are strictly inside the company bounds."
     };
   }
 
   const distance = getDistanceFromLatLonInMeters(lat, lng, geofence.officeLat, geofence.officeLng);
-  const effectiveDistance = Math.max(0, distance - acc);
+  const effectiveDistance = Math.max(0, distance - Math.min(acc, 20));
   if (punchType === 'IN' && effectiveDistance > geofence.radius) {
     return {
       ok: false,
       geofence,
       distance,
       accuracy: acc,
-      message: `You are ${Math.round(distance)}m away from office (GPS accuracy ${Math.round(acc)}m). Allowed radius is ${geofence.radius}m.`
+      message: `🔴 Strict Geofence Blocked: You are ${Math.round(distance)}m away. You must be strictly within ${geofence.radius}m of the office to check in!`
     };
   }
 
@@ -225,8 +225,8 @@ router.post("/check-out", auth, roleGuard("EMPLOYEE"), async (req, res) => {
     const attId = activeAttendance.id;
 
     await pool.query(
-      "INSERT INTO punch_logs (employee_id, attendance_id, punch_time, punch_type, location) VALUES (?, ?, ?, 'OUT', ?)",
-      [employeeId, attId, now, location || 'Unknown']
+      "INSERT INTO punch_logs (employee_id, attendance_id, punch_time, punch_type) VALUES (?, ?, ?, 'OUT')",
+      [employeeId, attId, now]
     );
 
     const [logs] = await pool.query(
@@ -264,6 +264,58 @@ router.post("/check-out", auth, roleGuard("EMPLOYEE"), async (req, res) => {
     return res.json({ message: "Check-out successful", totalMinutes, companyName });
   } catch (err) {
     console.error("Check-out error:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.post("/heartbeat", auth, roleGuard("EMPLOYEE"), async (req, res) => {
+  try {
+    const { latitude, longitude, accuracy } = req.body;
+    const employeeId = req.user.employee_id;
+    const companyId = req.user.company_id;
+    const now = new Date();
+    const dateStr = getBusinessDate(now);
+
+    const activeAttendance = await findActiveAttendance(employeeId, dateStr);
+    if (!activeAttendance) {
+      return res.json({ status: "not_punched_in" });
+    }
+
+    const geofence = await getCompanyGeofence(companyId);
+    if (!geofence) return res.json({ status: "ok", message: "No geofence set" });
+
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ message: "Invalid coords" });
+
+    const distance = getDistanceFromLatLonInMeters(lat, lng, geofence.officeLat, geofence.officeLng);
+    const acc = Math.max(0, Number(accuracy) || 0);
+    const effectiveDistance = Math.max(0, distance - Math.min(acc, 20));
+
+    if (effectiveDistance > geofence.radius) {
+      const attId = activeAttendance.id;
+      await pool.query(
+        "INSERT INTO punch_logs (employee_id, attendance_id, punch_time, punch_type, location) VALUES (?, ?, ?, 'OUT', ?)",
+        [employeeId, attId, now, `🚨 LIVE TRACKER AUTO-CHECKOUT: Employee left the strict ${geofence.radius}m zone (${Math.round(distance)}m away)`]
+      );
+      const [logs] = await pool.query("SELECT punch_time, punch_type FROM punch_logs WHERE attendance_id = ? ORDER BY punch_time ASC", [attId]);
+      const totalMinutes = calculateTotalMinutes(logs);
+      let standardWorkHours = 9, otApplicableFrom = 540, maxDailyOT = 180;
+      const [otRows] = await pool.query("SELECT standard_hours, ot_applicable_from_minutes, max_daily_ot_minutes FROM ot_settings WHERE company_id = ?", [companyId]);
+      if (otRows.length > 0) {
+        standardWorkHours = Number(otRows[0].standard_hours) || 9; otApplicableFrom = Number(otRows[0].ot_applicable_from_minutes) || 540; maxDailyOT = Number(otRows[0].max_daily_ot_minutes) || 180;
+      }
+      let overtimeMinutes = 0;
+      if (totalMinutes >= otApplicableFrom) {
+        overtimeMinutes = totalMinutes - Math.floor(standardWorkHours * 60);
+        if (maxDailyOT > 0 && overtimeMinutes > maxDailyOT) overtimeMinutes = maxDailyOT;
+        if (overtimeMinutes < 0) overtimeMinutes = 0;
+      }
+      await pool.query("UPDATE attendance SET check_out = ?, total_minutes = ?, overtime_minutes = ?, check_out_location = ? WHERE id = ?", [now, totalMinutes, overtimeMinutes, `🚨 Auto-checkout: Left ${geofence.radius}m perimeter`, attId]);
+      return res.status(403).json({ status: "auto_checked_out", message: `Auto checked out due to leaving the ${geofence.radius}m zone.` });
+    }
+    return res.json({ status: "ok", distance: effectiveDistance });
+  } catch (err) {
     return res.status(500).json({ message: "Server error" });
   }
 });

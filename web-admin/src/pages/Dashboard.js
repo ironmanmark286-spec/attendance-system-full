@@ -1687,10 +1687,12 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
 
                 {/* Office Geofencing Settings */}
                 <div className="card card-entrance">
-                  <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 10 }}><MapPin size={20} color="var(--danger)"/> Office Geofencing (GPS Lock)</h3>
+                  <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 10 }}><MapPin size={20} color="var(--danger)"/> Strict Geofence & Live Tracking 🚨</h3>
                   
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0, fontWeight: 500 }}>Restrict employee mobile punches to a specific radius around these office coordinates.</p>
+                    <div style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger)', padding: 12, borderRadius: 8, color: 'var(--danger-text)' }}>
+                      <strong>New Live Tracker:</strong> Employees can <strong>ONLY</strong> check in within the set radius (50m strictly enforced). If they leave the radius after checking in, the app will <strong>automatically check them out</strong> in the background!
+                    </div>
 
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label">Paste Coordinates Manually</label>
@@ -1702,34 +1704,35 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                         placeholder="Paste from phone Maps, e.g. 28.509892, 77.379702"
                       />
                       <div style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 6 }}>
-                        Phone Google Maps se exact latitude, longitude copy karke yahan paste karo.
+                        Google Maps se exact latitude, longitude copy karke yahan paste karein.
                       </div>
                     </div>
                     
                     <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                       <div className="form-group" style={{ flex: 1, minWidth: '120px', marginBottom: 0 }}>
-                        <label className="form-label">Latitude</label>
+                        <label className="form-label">Office Latitude</label>
                         <input type="number" step="any" className="form-control" value={officeLat} onChange={(e) => setOfficeLat(e.target.value)} placeholder="e.g. 28.6139" />
                       </div>
                       <div className="form-group" style={{ flex: 1, minWidth: '120px', marginBottom: 0 }}>
-                        <label className="form-label">Longitude</label>
+                        <label className="form-label">Office Longitude</label>
                         <input type="number" step="any" className="form-control" value={officeLng} onChange={(e) => setOfficeLng(e.target.value)} placeholder="e.g. 77.2090" />
                       </div>
                       <div className="form-group" style={{ flex: 1, minWidth: '100px', marginBottom: 0 }}>
-                        <label className="form-label">Radius (m)</label>
+                        <label className="form-label">Strict Radius (m)</label>
                         <input type="number" className="form-control" value={geofenceRadius} onChange={(e) => setGeofenceRadius(e.target.value)} placeholder="e.g. 50" />
+                        <small style={{ color: 'var(--text-muted)' }}>Default is strictly 50m.</small>
                       </div>
                     </div>
 
                     <div className="geofence-actions">
                       <button className="btn btn-secondary geofence-action-btn" onClick={handleGetCurrentLocation}>
-                        <MapPin size={16} style={{ marginRight: 6 }}/> Get My Location
+                        <MapPin size={16} style={{ marginRight: 6 }}/> Get Admin Location
                       </button>
                       <button className="btn btn-secondary geofence-action-btn" onClick={handleCheckCurrentDistance}>
                         <Target size={16} style={{ marginRight: 6 }}/> Check Distance
                       </button>
-                      <button className="btn geofence-action-btn" onClick={handleSaveGeofence}>
-                        Save Coordinates
+                      <button className="btn geofence-action-btn" onClick={handleSaveGeofence} style={{ background: 'var(--danger)', color: '#fff', border: 'none' }}>
+                        <CheckCircle2 size={16} style={{ marginRight: 6 }}/> Activate Live Tracking
                       </button>
                     </div>
 

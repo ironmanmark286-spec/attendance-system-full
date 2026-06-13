@@ -6,6 +6,7 @@ import axios from "axios";
 import * as Location from "expo-location";
 import * as LocalAuthentication from "expo-local-authentication";
 import * as ImagePicker from "expo-image-picker";
+import * as TaskManager from 'expo-task-manager';
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, FontAwesome5, Feather } from "@expo/vector-icons";
 
@@ -27,6 +28,36 @@ const API_ORIGIN = API_URL.replace(/\/api$/, "");
 const api = axios.create({
   baseURL: API_URL,
   timeout: 10000
+});
+
+const BACKGROUND_LOCATION_TASK = 'BACKGROUND_LOCATION_TASK';
+
+TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
+  if (error) {
+    console.log("Background Task Error:", error);
+    return;
+  }
+  if (data) {
+    const { locations } = data;
+    if (locations && locations.length > 0) {
+      const loc = locations[0];
+      try {
+        const token = await AsyncStorage.getItem("token");
+        const bgPunchedIn = await AsyncStorage.getItem("bgPunchedIn");
+        if (token && bgPunchedIn === "true") {
+          await api.post("/attendance/heartbeat", {
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+            accuracy: loc.coords.accuracy
+          }, { headers: { Authorization: `Bearer ${token}` } });
+        }
+      } catch (err) {
+        if (err?.response?.data?.status === "auto_checked_out" || err?.response?.status === 403) {
+            await AsyncStorage.setItem("bgPunchedIn", "false");
+        }
+      }
+    }
+  }
 });
 
 api.interceptors.response.use(
@@ -79,28 +110,6 @@ const safeGetWeekday = (date) => DAYS[date.getDay()] || "";
 const safeFormatDate = (date) => {
   if (!date || isNaN(date.getTime())) return "--/--/----";
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-};
-
-// Haversine formula to calculate distance in meters between two GPS coordinates
-const getDistanceFromLatLonInMeters = (lat1, lon1, lat2, lon2) => {
-  const R = 6371e3; // Earth radius in meters
-  const dLat = (lat2 - lat1) * (Math.PI / 180);
-  const dLon = (lon2 - lon1) * (Math.PI / 180);
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
-            Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-};
-
-const getProfileGeofence = (employeeProfile = {}) => {
-  const officeLat = Number(employeeProfile.office_lat);
-  const officeLng = Number(employeeProfile.office_lng);
-  const radius = Number(employeeProfile.geofence_radius);
-  if (!Number.isFinite(officeLat) || !Number.isFinite(officeLng) || !Number.isFinite(radius) || radius <= 0) {
-    return null;
-  }
-  return { officeLat, officeLng, radius };
 };
 
 const makeLocationPayload = (loc, location) => ({
@@ -193,8 +202,7 @@ function AppContent() {
   const loginFadeAnim = useRef(new Animated.Value(0)).current;
   const loginSlideAnim = useRef(new Animated.Value(50)).current;
   const logoFloatAnim = useRef(new Animated.Value(0)).current;
-  const autoCheckoutInFlight = useRef(false);
-  const outsideGeofenceCount = useRef(0);
+  const heroBreathAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (!token && isAppReady) {
@@ -212,6 +220,18 @@ function AppContent() {
       ]).start();
     }
   }, [token, isAppReady, loginFadeAnim, loginSlideAnim, logoFloatAnim]);
+
+  useEffect(() => {
+    if (!isAppReady || !token) return undefined;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(heroBreathAnim, { toValue: 1, duration: 2600, useNativeDriver: true }),
+        Animated.timing(heroBreathAnim, { toValue: 0, duration: 2600, useNativeDriver: true })
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [heroBreathAnim, isAppReady, token]);
 
   const handleLogout = useCallback(async () => {
     await AsyncStorage.removeItem("token");
@@ -427,98 +447,64 @@ function AppContent() {
     return loc;
   };
 
-  const getConfiguredGeofence = () => {
-    return getProfileGeofence(profile);
-  };
-
-  const refreshProfileForPunch = async () => {
-    if (!token) return profile;
-    try {
-      const { data } = await api.get("/employees/me", { headers: { Authorization: `Bearer ${token}` } });
-      const freshProfile = data || profile;
-      setProfile(freshProfile);
-      await AsyncStorage.setItem("profile", JSON.stringify(freshProfile));
-      return freshProfile;
-    } catch (e) {
-      console.log("Fresh profile fetch skipped:", e?.response?.data || e.message);
-      return profile;
-    }
-  };
-
   const startBackgroundGeofence = useCallback(async () => {
-    return undefined;
+    try {
+      const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
+      if (fgStatus === 'granted') {
+        const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
+        if (bgStatus === 'granted') {
+          await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
+            accuracy: Location.Accuracy.Highest,
+            timeInterval: 60000,
+            distanceInterval: 10,
+            showsBackgroundLocationIndicator: true,
+            foregroundService: {
+              notificationTitle: "PulseHR Live Tracking",
+              notificationBody: "Monitoring location for strict 50m geofence compliance.",
+              notificationColor: "#10b981",
+            }
+          });
+        } else {
+          Alert.alert("Background Permission Needed", "Strict geofencing requires 'Allow all the time' location access to auto-checkout when you leave the 50m zone.");
+        }
+      }
+    } catch (e) {
+      console.log("Failed to start background tracking", e);
+    }
   }, []);
 
   const stopBackgroundGeofence = useCallback(async () => {
-    return undefined;
+    try {
+      const hasStarted = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+      if (hasStarted) {
+        await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+      }
+    } catch (e) {
+      console.log("Failed to stop tracking", e);
+    }
   }, []);
 
-  const autoCheckoutIfOutsideGeofence = useCallback(async () => {
-    if (!token || !isPunchedIn || autoCheckoutInFlight.current) return;
-    const geofence = getConfiguredGeofence();
-    if (!geofence) return;
-
-    try {
-      const loc = await getFastLocation(true);
-      if (!loc) return;
-
-      const distance = getDistanceFromLatLonInMeters(
-        loc.coords.latitude,
-        loc.coords.longitude,
-        geofence.officeLat,
-        geofence.officeLng
-      );
-
-      const accuracy = Number(loc.coords.accuracy) || 0;
-      const effectiveDistance = Math.max(0, distance - accuracy);
-
-      if (effectiveDistance <= geofence.radius) {
-        outsideGeofenceCount.current = 0;
-        return;
-      }
-
-      outsideGeofenceCount.current += 1;
-      if (outsideGeofenceCount.current < 2) return;
-
-      autoCheckoutInFlight.current = true;
-      const address = await resolveAddress(loc);
-      const { data } = await api.post(
-        "/attendance/check-out",
-        makeLocationPayload(loc, `Auto checkout - left geofence (${Math.round(distance)}m, accuracy ${Math.round(accuracy)}m): ${address}`),
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setCheckOutTime(format12Hour(new Date()));
-      setIsPunchedIn(false);
-      await AsyncStorage.setItem("bgPunchedIn", "false");
-      outsideGeofenceCount.current = 0;
-      await loadData(token);
-      Alert.alert("Auto Check-out", `Aap office radius se bahar chale gaye the, isliye checkout ho gaya. Total: ${formatMins(data.totalMinutes || 0)}`);
-    } catch (e) {
-      console.log("Auto checkout error:", e?.response?.data || e.message);
-    } finally {
-      autoCheckoutInFlight.current = false;
-    }
-  }, [token, isPunchedIn, profile.office_lat, profile.office_lng, profile.geofence_radius, loadData]);
-
   useEffect(() => {
-    if (!token || !isPunchedIn) return undefined;
-    const interval = setInterval(() => {
-      if (AppState.currentState === "active") {
-        autoCheckoutIfOutsideGeofence();
+    if (!token) return profile;
+    const interval = setInterval(async () => {
+      const bgFlag = await AsyncStorage.getItem("bgPunchedIn");
+      if (bgFlag === "false" && isPunchedIn) {
+        setIsPunchedIn(false);
+        Alert.alert("🚨 Auto Check-Out", "You stepped out of the strict 50m company zone and were automatically checked out by the live tracker.");
+        loadData(token);
       }
-    }, 60000);
-    autoCheckoutIfOutsideGeofence();
+    }, 15000);
     return () => clearInterval(interval);
-  }, [token, isPunchedIn, autoCheckoutIfOutsideGeofence]);
+  }, [token, isPunchedIn, loadData]);
 
   useEffect(() => {
     AsyncStorage.setItem("bgPunchedIn", isPunchedIn ? "true" : "false");
-    if (token && isPunchedIn && getConfiguredGeofence()) {
+    if (token && isPunchedIn) {
       startBackgroundGeofence();
     } else {
       stopBackgroundGeofence();
     }
-  }, [token, isPunchedIn, profile.office_lat, profile.office_lng, profile.geofence_radius, startBackgroundGeofence, stopBackgroundGeofence]);
+  }, [token, isPunchedIn, startBackgroundGeofence, stopBackgroundGeofence]);
 
   const handleLocationAction = async (type) => {
     setIsLocating(true);
@@ -544,50 +530,22 @@ function AppContent() {
     let addressStr = "Unknown Location";
     let locationPayload = { location: addressStr };
     try {
-      const latestProfile = await refreshProfileForPunch();
-      const geofence = getProfileGeofence(latestProfile);
-      const loc = await getFastLocation(Boolean(geofence));
-
-      if (!loc && geofence) {
-        setIsLocating(false);
-        return Alert.alert(
-          "GPS Required",
-          "Office geofence enabled hai. Punch mark karne ke liye location permission aur GPS signal required hai."
-        );
-      }
-
+      const loc = await getFastLocation(true);
       if (loc) {
-        const distance = geofence ? getDistanceFromLatLonInMeters(
-          loc.coords.latitude,
-          loc.coords.longitude,
-          geofence.officeLat,
-          geofence.officeLng
-        ) : 0;
-        const accuracy = Number(loc.coords.accuracy) || 0;
-        const effectiveDistance = Math.max(0, distance - accuracy);
-
-        if (geofence && type === 'In' && effectiveDistance > geofence.radius) {
+        if (!loc.coords) {
           setIsLocating(false);
-          const currentCoords = `${loc.coords.latitude.toFixed(7)}, ${loc.coords.longitude.toFixed(7)}`;
-          const officeCoords = `${geofence.officeLat}, ${geofence.officeLng}`;
-          return Alert.alert(
-            "Location Out of Bounds 🚫",
-            `GPS says you are ${Math.round(distance)}m away (accuracy ${Math.round(accuracy)}m). Verified distance is about ${Math.round(effectiveDistance)}m.\n\nAllowed radius is ${geofence.radius}m.\n\nCurrent phone location:\n${currentCoords}\n\nSaved office location:\n${officeCoords}\n\nIf you are inside office, save current phone location as office point in website settings, or increase radius for testing.`
-          );
+          return Alert.alert("GPS Error", "Failed to retrieve coordinates. Ensure location access is permitted.");
         }
-
         addressStr = await resolveAddress(loc);
-        if (geofence && type === 'Out' && effectiveDistance > geofence.radius) {
-          addressStr = `Outside geofence (${Math.round(distance)}m, accuracy ${Math.round(accuracy)}m): ${addressStr}`;
-        }
         locationPayload = makeLocationPayload(loc, addressStr);
+      } else {
+        setIsLocating(false);
+        return Alert.alert("GPS Required", "Strict Live Geofencing is active. Please turn on GPS to proceed.");
       }
     } catch (e) {
       console.log("GPS fetch skipped/failed:", e);
-      if (getProfileGeofence(profile)) {
-        setIsLocating(false);
-        return Alert.alert("GPS Error", "Location verify nahi ho payi. Please GPS/location permission check karke retry karein.");
-      }
+      setIsLocating(false);
+      return Alert.alert("GPS Error", "Location verification failed. Please check GPS permissions.");
     }
     
     // Immediately proceed to check-in/out
@@ -715,23 +673,34 @@ function AppContent() {
 
   const isDark = theme === "dark";
   const palette = useMemo(() => ({
-    bgApp: isDark ? "#09090b" : "#f4f7fb",
-    bgCard: isDark ? "#18181b" : "#ffffff",
-    bgInput: isDark ? "#27272a" : "#f1f5f9",
-    border: isDark ? "#27272a" : "#e2e8f0",
-    textPrimary: isDark ? "#fafafa" : "#0f172a",
-    textSecondary: isDark ? "#a1a1aa" : "#64748b",
-    primary: "#6366f1",
-    primaryHover: "#818cf8",
+    bgApp: isDark ? "#071017" : "#edf3f8",
+    bgCard: isDark ? "rgba(13, 24, 34, 0.92)" : "rgba(255, 255, 255, 0.94)",
+    bgInput: isDark ? "rgba(24, 39, 52, 0.95)" : "rgba(248, 250, 252, 0.96)",
+    border: isDark ? "rgba(148, 163, 184, 0.16)" : "rgba(15, 23, 42, 0.09)",
+    textPrimary: isDark ? "#f8fbff" : "#0b1220",
+    textSecondary: isDark ? "#9fb0bf" : "#526174",
+    primary: "#0ea5e9",
+    primaryHover: "#38bdf8",
     success: "#10b981",
     warning: "#f59e0b",
-    danger: "#ef4444",
-    tabBg: isDark ? "rgba(9, 9, 11, 0.98)" : "rgba(255, 255, 255, 0.98)",
-    shadow: isDark ? "rgba(0,0,0,0.5)" : "rgba(0,0,0,0.08)",
+    danger: "#e11d48",
+    accent: "#14b8a6",
+    tabBg: isDark ? "rgba(9, 18, 26, 0.96)" : "rgba(255, 255, 255, 0.96)",
+    shadow: isDark ? "rgba(0,0,0,0.62)" : "rgba(15,23,42,0.12)",
   }), [isDark]);
 
   const tabBarBottom = Math.max(insets.bottom, 12) + 8;
   const contentPadBottom = 76 + tabBarBottom;
+  const heroScale = heroBreathAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.045] });
+  const heroOpacity = heroBreathAnim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] });
+  const switchTab = (tab) => {
+    if (tab === activeTab) return;
+    Animated.sequence([
+      Animated.timing(fade, { toValue: 0.35, duration: 110, useNativeDriver: true }),
+      Animated.timing(fade, { toValue: 1, duration: 220, useNativeDriver: true })
+    ]).start();
+    setActiveTab(tab);
+  };
 
   if (!isAppReady) {
     return (
@@ -840,6 +809,14 @@ function AppContent() {
   return (
     <View style={[styles.screen, { backgroundColor: palette.bgApp, paddingTop: insets.top }]}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={palette.bgApp} translucent={false} />
+      <LinearGradient
+        colors={isDark ? ["#071017", "#0b1f2a", "#072015"] : ["#edf3f8", "#e0f2fe", "#eefcf6"]}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+      <Animated.View style={[styles.ambientAura, { top: -90, left: -80, backgroundColor: isDark ? "rgba(14,165,233,0.18)" : "rgba(14,165,233,0.20)", opacity: heroOpacity, transform: [{ scale: heroScale }] }]} />
+      <Animated.View style={[styles.ambientAura, { right: -110, bottom: 150, backgroundColor: isDark ? "rgba(16,185,129,0.14)" : "rgba(20,184,166,0.16)", opacity: heroOpacity, transform: [{ scale: heroScale }] }]} />
       <Animated.View style={{ opacity: fade, flex: 1, paddingBottom: contentPadBottom }}>
           
           {/* TAB: HOME */}
@@ -850,7 +827,7 @@ function AppContent() {
               <LiveClock palette={palette} />
               
               {/* AI Motivation Widget */}
-              <View style={[styles.quoteCard, { backgroundColor: 'rgba(99, 102, 241, 0.1)', borderColor: 'rgba(99, 102, 241, 0.3)' }]}>
+              <View style={[styles.quoteCard, { backgroundColor: isDark ? 'rgba(14, 165, 233, 0.12)' : 'rgba(14, 165, 233, 0.10)', borderColor: isDark ? 'rgba(56, 189, 248, 0.28)' : 'rgba(14, 165, 233, 0.22)' }]}>
                  <Ionicons name="sparkles" size={20} color={palette.primary} style={{ marginBottom: 8 }} />
                  <Text style={{ color: palette.textPrimary, fontSize: 15, fontWeight: '700', fontStyle: 'italic', lineHeight: 22 }}>
                    "The only way to do great work is to love what you do."
@@ -862,14 +839,14 @@ function AppContent() {
 
               {/* Professional Stats Row */}
               <View style={{ flexDirection: 'row', gap: 16, marginBottom: 24 }}>
-                <View style={[styles.proStatCard, { backgroundColor: palette.bgCard, borderColor: palette.border }]}>
-                   <View style={{ backgroundColor: 'rgba(99, 102, 241, 0.1)', padding: 10, borderRadius: 12, alignSelf: 'flex-start' }}>
+                <View style={[styles.proStatCard, { backgroundColor: palette.bgCard, borderColor: palette.border, shadowColor: palette.shadow }]}>
+                   <View style={{ backgroundColor: 'rgba(14, 165, 233, 0.12)', padding: 10, borderRadius: 12, alignSelf: 'flex-start' }}>
                       <Ionicons name="briefcase" size={20} color={palette.primary} />
                    </View>
                    <Text style={{ color: palette.textSecondary, fontSize: 12, fontWeight: '700', marginTop: 12 }}>TODAY'S SHIFT</Text>
                    <Text style={{ color: palette.textPrimary, fontSize: 15, fontWeight: '800', marginTop: 4 }}>09:00 AM</Text>
                 </View>
-                <View style={[styles.proStatCard, { backgroundColor: palette.bgCard, borderColor: palette.border }]}>
+                <View style={[styles.proStatCard, { backgroundColor: palette.bgCard, borderColor: palette.border, shadowColor: palette.shadow }]}>
                    <View style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: 10, borderRadius: 12, alignSelf: 'flex-start' }}>
                       <Ionicons name="time" size={20} color={palette.success} />
                    </View>
@@ -1439,7 +1416,7 @@ function AppContent() {
             if (tab === 'Profile') iconName = isActive ? "person" : "person-outline";
 
             return (
-              <TouchableOpacity key={tab} style={[styles.tabItem, { minWidth: 70, paddingHorizontal: 4 }]} onPress={() => setActiveTab(tab)}>
+              <TouchableOpacity key={tab} activeOpacity={0.76} style={[styles.tabItem, { minWidth: 70, paddingHorizontal: 4 }, isActive && { backgroundColor: isDark ? 'rgba(14,165,233,0.14)' : 'rgba(14,165,233,0.10)', borderRadius: 16 }]} onPress={() => switchTab(tab)}>
                 <Ionicons name={iconName} size={24} color={isActive ? palette.primary : palette.textSecondary} />
                 {isActive && <Text style={[styles.tabText, { color: palette.primary }]} numberOfLines={1}>{tab}</Text>}
               </TouchableOpacity>
@@ -1616,8 +1593,9 @@ function AppContent() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
+  ambientAura: { position: 'absolute', width: 280, height: 280, borderRadius: 140 },
   // Login
-  loginCard: { borderRadius: 32, padding: 32, borderWidth: 1, elevation: 20 },
+  loginCard: { borderRadius: 28, padding: 32, borderWidth: 1, elevation: 20 },
   loginLogoContainer: { width: 80, height: 80, borderRadius: 24, justifyContent: 'center', alignItems: 'center', marginBottom: 24 },
   loginTitle: { fontSize: 36, fontWeight: "900", marginBottom: 8, letterSpacing: -1 },
   loginSubTitle: { fontSize: 16, marginBottom: 32, fontWeight: '500' },
@@ -1636,7 +1614,7 @@ const styles = StyleSheet.create({
   iconBtn: { width: 44, height: 44, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 1, elevation: 5 },
 
   // Dashboard
-  proStatCard: { flex: 1, padding: 16, borderRadius: 20, borderWidth: 1, elevation: 5 },
+  proStatCard: { flex: 1, padding: 16, borderRadius: 18, borderWidth: 1, elevation: 7, shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.12, shadowRadius: 18 },
   clockContainer: { marginBottom: 24, alignItems: 'flex-start' },
   clockText: { fontSize: 36, fontWeight: "900", letterSpacing: -1, lineHeight: 42 },
   dateText: { fontSize: 13, fontWeight: "800", marginTop: 4, letterSpacing: 1, textTransform: 'uppercase' },
@@ -1644,28 +1622,28 @@ const styles = StyleSheet.create({
   // New Pulse Orb UI
   pulseOrb: { width: width - 80, height: width - 80, maxWidth: 300, maxHeight: 300, borderRadius: 150, justifyContent: 'center', alignItems: 'center', elevation: 20 },
   pulseOrbInner: { width: '85%', height: '85%', borderRadius: 150, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'rgba(255,255,255,0.3)' },
-  quoteCard: { padding: 20, borderRadius: 24, borderWidth: 1, marginBottom: 24 },
+  quoteCard: { padding: 20, borderRadius: 18, borderWidth: 1, marginBottom: 24 },
 
   sectionTitle: { fontSize: 20, fontWeight: "800", marginBottom: 20, letterSpacing: -0.5 },
-  historyCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 20, borderWidth: 1, marginBottom: 12, elevation: 5 },
-  historyDateBox: { width: 56, height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
-  announcementCard: { padding: 16, borderRadius: 20, borderWidth: 1, marginBottom: 32, borderLeftWidth: 4, borderLeftColor: '#f59e0b' },
+  historyCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 18, borderWidth: 1, marginBottom: 12, elevation: 6, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.10, shadowRadius: 16 },
+  historyDateBox: { width: 56, height: 56, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  announcementCard: { padding: 16, borderRadius: 18, borderWidth: 1, marginBottom: 32, borderLeftWidth: 4, borderLeftColor: '#f59e0b' },
 
   // Leaves
   balanceCard: { flex: 1, padding: 16, borderRadius: 16, borderWidth: 1 },
   applyLeaveBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 18, borderRadius: 20, marginBottom: 32 },
   applyLeaveText: { color: '#fff', fontWeight: '800', fontSize: 16, marginLeft: 10 },
-  leaveCard: { padding: 24, borderRadius: 24, borderWidth: 1, marginBottom: 16, elevation: 5 },
+  leaveCard: { padding: 24, borderRadius: 18, borderWidth: 1, marginBottom: 16, elevation: 6, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.10, shadowRadius: 16 },
   badge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 },
 
   // Timesheet
   timesheetHeader: { padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 20, flexDirection: 'row', alignItems: 'center' },
-  statBox: { flex: 1, padding: 24, borderRadius: 24, borderWidth: 1, alignItems: 'center', marginBottom: 16, elevation: 5 },
+  statBox: { flex: 1, padding: 24, borderRadius: 18, borderWidth: 1, alignItems: 'center', marginBottom: 16, elevation: 6 },
   statValue: { fontSize: 32, fontWeight: '900', marginBottom: 8, letterSpacing: -1 },
   statLabel: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
 
   // Profile
-  profileCard: { padding: 32, borderRadius: 32, borderWidth: 1, alignItems: 'center', marginBottom: 24, elevation: 10 },
+  profileCard: { padding: 32, borderRadius: 24, borderWidth: 1, alignItems: 'center', marginBottom: 24, elevation: 10 },
   profileAvatar: { width: 100, height: 100, borderRadius: 32, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
   profileName: { fontSize: 28, fontWeight: '800', marginBottom: 4, letterSpacing: -1 },
   profileCode: { fontSize: 16, fontWeight: '600' },
@@ -1675,13 +1653,13 @@ const styles = StyleSheet.create({
   logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 20, borderRadius: 20, borderWidth: 1 },
 
   // Floating Tab Bar
-  tabBar: { flexDirection: 'row', height: 64, paddingHorizontal: 8, position: 'absolute', left: 16, right: 16, borderRadius: 20, borderWidth: 1, elevation: 12 },
+  tabBar: { flexDirection: 'row', height: 68, paddingHorizontal: 8, position: 'absolute', left: 16, right: 16, borderRadius: 20, borderWidth: 1, elevation: 16, shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.18, shadowRadius: 24 },
   tabItem: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   tabText: { fontSize: 11, fontWeight: '800', marginTop: 4 },
 
   // Modals
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)" },
-  actionModalContent: { margin: 24, marginTop: 'auto', marginBottom: 'auto', borderRadius: 32, padding: 32, borderWidth: 1, alignItems: 'center', elevation: 20 },
+  actionModalContent: { margin: 24, marginTop: 'auto', marginBottom: 'auto', borderRadius: 24, padding: 32, borderWidth: 1, alignItems: 'center', elevation: 20 },
   leaveModalContent: { borderTopLeftRadius: 40, borderTopRightRadius: 40, padding: 32, borderWidth: 1, elevation: 20 },
   modalIconContainer: { width: 80, height: 80, borderRadius: 24, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
   modalTitle: { fontSize: 24, fontWeight: "900", marginBottom: 10, letterSpacing: -0.5 },
