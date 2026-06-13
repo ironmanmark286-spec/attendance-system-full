@@ -25,7 +25,7 @@ const timeToMinutes = (timeValue, fallback = "09:00:00") => {
   return hours * 60 + minutes;
 };
 
-const calculateTotalMinutes = (logs) => {
+const calculateTotalMinutes = (logs, until = null) => {
   let totalMinutes = 0;
   let lastIn = null;
   for (const log of logs) {
@@ -37,7 +37,20 @@ const calculateTotalMinutes = (logs) => {
       lastIn = null;
     }
   }
+  if (until && lastIn) {
+    totalMinutes += Math.max(0, Math.floor((until - lastIn) / 60000));
+  }
   return totalMinutes;
+};
+
+const getAttendanceRuntime = (logs, now = new Date()) => {
+  const lastLog = logs.length ? logs[logs.length - 1] : null;
+  const lastPunch = lastLog?.punch_type || null;
+  const totalMinutes = calculateTotalMinutes(logs, lastPunch === 'IN' ? now : null);
+  const currentSessionMinutes = lastPunch === 'IN'
+    ? Math.max(0, Math.floor((now - new Date(lastLog.punch_time)) / 60000))
+    : 0;
+  return { lastPunch, totalMinutes, currentSessionMinutes };
 };
 
 const getDistanceFromLatLonInMeters = (lat1, lon1, lat2, lon2) => {
@@ -335,11 +348,16 @@ router.get("/history", auth, roleGuard("EMPLOYEE"), async (req, res) => {
 
     if (rows.length > 0) {
       const now = new Date();
-      const today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
-      
-      // A punch is active if the last log is 'IN' and it's the most recent attendance record
-      // We use the last_punch retrieved directly via SQL to prevent JS timezone parsing bugs
-      rows[0].is_punched_in = rows[0].last_punch === 'IN';
+      for (const row of rows) {
+        const [logs] = await pool.query(
+          "SELECT punch_time, punch_type FROM punch_logs WHERE attendance_id = ? ORDER BY punch_time ASC",
+          [row.id]
+        );
+        const runtime = getAttendanceRuntime(logs, now);
+        row.total_minutes = runtime.totalMinutes;
+        row.current_session_minutes = runtime.currentSessionMinutes;
+        row.is_punched_in = runtime.lastPunch === 'IN';
+      }
     }
 
     return res.json(rows);
@@ -409,10 +427,11 @@ router.get("/today", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), async (req, r
       [dateStr, req.user.company_id]
     );
     
+    const now = new Date();
     for (let r of rows) {
       const [logs] = await pool.query("SELECT punch_time, punch_type FROM punch_logs WHERE attendance_id = ? ORDER BY punch_time ASC", [r.id]);
       r.punches = logs;
-      const lastPunch = logs.length ? logs[logs.length - 1].punch_type : null;
+      const runtime = getAttendanceRuntime(logs, now);
       const awayMinutes = (() => {
         let away = 0;
         for (let i = 0; i < logs.length - 1; i += 1) {
@@ -422,13 +441,59 @@ router.get("/today", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), async (req, r
         }
         return away;
       })();
-      r.live_status = lastPunch === 'IN' ? 'INSIDE' : (lastPunch === 'OUT' ? 'OUTSIDE' : 'UNKNOWN');
+      r.total_minutes = runtime.totalMinutes;
+      r.current_session_minutes = runtime.currentSessionMinutes;
+      r.live_status = runtime.lastPunch === 'IN' ? 'ACTIVE' : (runtime.lastPunch === 'OUT' ? 'CHECKED OUT' : 'UNKNOWN');
       r.away_minutes = awayMinutes;
     }
 
     return res.json(rows);
   } catch (err) {
     console.error("Today attendance error:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.get("/logs/monthly", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), async (req, res) => {
+  try {
+    const { month } = req.query;
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ message: "month is required in YYYY-MM format" });
+    }
+
+    const startDate = `${month}-01`;
+    const [endRows] = await pool.query("SELECT LAST_DAY(?) AS last_day", [startDate]);
+    const endDate = endRows[0].last_day;
+
+    const [rows] = await pool.query(
+      `SELECT a.*, e.emp_code, e.name
+       FROM attendance a
+       JOIN employees e ON e.id = a.employee_id
+       WHERE a.att_date BETWEEN ? AND ? AND e.company_id = ?
+       ORDER BY a.att_date DESC, a.check_in DESC`,
+      [startDate, endDate, req.user.company_id]
+    );
+
+    const now = new Date();
+    for (let r of rows) {
+      const [logs] = await pool.query("SELECT punch_time, punch_type FROM punch_logs WHERE attendance_id = ? ORDER BY punch_time ASC", [r.id]);
+      const runtime = getAttendanceRuntime(logs, now);
+      r.punches = logs;
+      r.total_minutes = runtime.totalMinutes;
+      r.current_session_minutes = runtime.currentSessionMinutes;
+      r.live_status = runtime.lastPunch === 'IN' ? 'ACTIVE' : (runtime.lastPunch === 'OUT' ? 'CHECKED OUT' : 'UNKNOWN');
+      r.away_minutes = logs.reduce((away, log, index) => {
+        const nextLog = logs[index + 1];
+        if (log.punch_type === 'OUT' && nextLog?.punch_type === 'IN') {
+          return away + Math.max(0, Math.floor((new Date(nextLog.punch_time) - new Date(log.punch_time)) / 60000));
+        }
+        return away;
+      }, 0);
+    }
+
+    return res.json(rows);
+  } catch (err) {
+    console.error("Monthly attendance logs error:", err);
     return res.status(500).json({ message: "Server error" });
   }
 });
@@ -526,13 +591,25 @@ router.get("/report/monthly", auth, roleGuard("ADMIN", "HR", "SUPERVISOR"), asyn
     const endDate = endRows[0].last_day;
 
     const [rows] = await pool.query(
-      `SELECT e.emp_code, e.name, a.att_date, a.check_in, a.check_out, a.total_minutes, a.overtime_minutes, a.status, a.check_in_location, a.check_out_location
+      `SELECT a.id, e.emp_code, e.name, a.att_date, a.check_in, a.check_out, a.total_minutes, a.overtime_minutes, a.status, a.check_in_location, a.check_out_location
        FROM attendance a
        JOIN employees e ON e.id = a.employee_id
        WHERE a.att_date BETWEEN ? AND ? AND e.company_id = ?
        ORDER BY e.emp_code, a.att_date`,
       [startDate, endDate, req.user.company_id]
     );
+
+    const now = new Date();
+    for (let row of rows) {
+      const [logs] = await pool.query(
+        "SELECT punch_time, punch_type FROM punch_logs WHERE attendance_id = ? ORDER BY punch_time ASC",
+        [row.id]
+      );
+      if (logs.length) {
+        row.total_minutes = getAttendanceRuntime(logs, now).totalMinutes;
+      }
+      delete row.id;
+    }
 
     const parser = new Parser({
       fields: ["emp_code", "name", "att_date", "check_in", "check_out", "total_minutes", "overtime_minutes", "status", "check_in_location", "check_out_location"]

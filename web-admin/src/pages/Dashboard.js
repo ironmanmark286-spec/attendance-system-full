@@ -186,7 +186,7 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
     if (showLoading) setLoading(true);
     try {
       const [attRes, statsRes, empRes, leavesRes, payslipsRes, noticesRes, monthlyRes, billingRes, workspaceRes, expensesRes] = await Promise.all([
-        api.get("/attendance/today").catch(() => ({ data: [] })),
+        api.get(`/attendance/logs/monthly?month=${month}`).catch(() => ({ data: [] })),
         api.get("/attendance/stats/today").catch(() => ({ data: { total: 0, present: 0, late: 0, absent: 0, companyName: "Error Loading", companyCode: "", adminName: "Admin" } })),
         api.get("/employees").catch(() => ({ data: [] })),
         api.get("/leaves").catch(() => ({ data: [] })),
@@ -1189,7 +1189,7 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                 <Search size={18} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                 <input type="text" className="form-control" placeholder="Search employee..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ paddingLeft: 38, width: '100%' }} />
               </div>
-                  <button className={`btn ${attendanceView === 'daily' ? '' : 'btn-secondary'} hover-lift`} onClick={() => setAttendanceView('daily')}>Daily Logs</button>
+                  <button className={`btn ${attendanceView === 'daily' ? '' : 'btn-secondary'} hover-lift`} onClick={() => setAttendanceView('daily')}>Attendance Logs</button>
                   <button className={`btn ${attendanceView === 'monthly' ? '' : 'btn-secondary'} hover-lift`} onClick={() => setAttendanceView('monthly')}>Monthly Payroll Summary</button>
                   <input className="form-control" style={{ width: 'auto' }} type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
                   <button className="btn hover-lift" style={{ background: '#0f172a' }} onClick={downloadCsv}>
@@ -1221,13 +1221,14 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                   </thead>
                   <tbody>
                     {filteredRows.length === 0 ? (
-                      <tr><td colSpan="6" style={{ textAlign: 'center', padding: '60px', color: 'var(--text-muted)' }}>No records found matching your search.</td></tr>
+                      <tr><td colSpan="6" style={{ textAlign: 'center', padding: '60px', color: 'var(--text-muted)' }}>No attendance records found for this month.</td></tr>
                     ) : (
                       filteredRows.map((r) => (
                         <tr key={r.id}>
                           <td>
                             <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: 16 }}>{r.name}</div>
                             <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: 4 }}>{r.emp_code}</div>
+                            <div style={{ fontSize: '12px', color: 'var(--primary)', marginTop: 6, fontWeight: 800 }}>{r.att_date ? new Date(r.att_date).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}</div>
                           </td>
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1272,7 +1273,7 @@ export default function Dashboard({ theme, onToggleTheme, animationsEnabled, onT
                             {getStatusBadge(r.status)}
                             {r.live_status && (
                               <div style={{ marginTop: 6 }}>
-                                <span className={`badge ${r.live_status === 'INSIDE' ? 'badge-success' : 'badge-danger'}`}>{r.live_status}</span>
+                                <span className={`badge ${r.live_status === 'ACTIVE' ? 'badge-success' : 'badge-info'}`}>{r.live_status}</span>
                               </div>
                             )}
                           </td>

@@ -164,6 +164,8 @@ function AppContent() {
   const [checkOutTime, setCheckOutTime] = useState("--:--");
   const [isPunchedIn, setIsPunchedIn] = useState(false);
   const [todayTotalMinutes, setTodayTotalMinutes] = useState(0);
+  const [workedMinutesSyncedAt, setWorkedMinutesSyncedAt] = useState(Date.now());
+  const [workedMinutesNow, setWorkedMinutesNow] = useState(Date.now());
   const [todayOT, setTodayOT] = useState(0);
   const [history, setHistory] = useState([]);
   const [myLeaves, setMyLeaves] = useState([]);
@@ -233,6 +235,12 @@ function AppContent() {
     return () => loop.stop();
   }, [heroBreathAnim, isAppReady, token]);
 
+  useEffect(() => {
+    if (!isPunchedIn) return undefined;
+    const timer = setInterval(() => setWorkedMinutesNow(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, [isPunchedIn]);
+
   const handleLogout = useCallback(async () => {
     await AsyncStorage.removeItem("token");
     await AsyncStorage.removeItem("profile");
@@ -276,12 +284,16 @@ function AppContent() {
             setIsPunchedIn(latest.is_punched_in === true);
             await AsyncStorage.setItem("bgPunchedIn", latest.is_punched_in === true ? "true" : "false");
             setTodayTotalMinutes(latest.total_minutes || 0);
+            setWorkedMinutesSyncedAt(Date.now());
+            setWorkedMinutesNow(Date.now());
             setTodayOT(latest.overtime_minutes || 0);
           } else {
             setCheckInTime("--:--"); setCheckOutTime("--:--");
             setIsPunchedIn(false);
             await AsyncStorage.setItem("bgPunchedIn", "false");
             setTodayTotalMinutes(0);
+            setWorkedMinutesSyncedAt(Date.now());
+            setWorkedMinutesNow(Date.now());
             setTodayOT(0);
           }
         } else {
@@ -289,6 +301,8 @@ function AppContent() {
             setIsPunchedIn(false);
             await AsyncStorage.setItem("bgPunchedIn", "false");
             setTodayTotalMinutes(0);
+            setWorkedMinutesSyncedAt(Date.now());
+            setWorkedMinutesNow(Date.now());
             setTodayOT(0);
         }
       }
@@ -701,6 +715,9 @@ function AppContent() {
 
   const tabBarBottom = Math.max(insets.bottom, 12) + 8;
   const contentPadBottom = 76 + tabBarBottom;
+  const displayedTotalMinutes = isPunchedIn
+    ? todayTotalMinutes + Math.max(0, Math.floor((workedMinutesNow - workedMinutesSyncedAt) / 60000))
+    : todayTotalMinutes;
   const heroScale = heroBreathAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.045] });
   const heroOpacity = heroBreathAnim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] });
   const switchTab = (tab) => {
@@ -900,7 +917,7 @@ function AppContent() {
               <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 16, marginBottom: 32 }}>
                  <View style={{ alignItems: 'center' }}>
                     <Text style={{ color: palette.textSecondary, fontSize: 11, fontWeight: '700' }}>TOTAL WORKED</Text>
-                    <Text style={{ color: palette.textPrimary, fontSize: 16, fontWeight: '800' }}>{formatMins(todayTotalMinutes)}</Text>
+                    <Text style={{ color: palette.textPrimary, fontSize: 16, fontWeight: '800' }}>{formatMins(displayedTotalMinutes)}</Text>
                  </View>
                  <View style={{ width: 1, backgroundColor: palette.border }} />
                  <View style={{ alignItems: 'center' }}>
